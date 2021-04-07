@@ -14,6 +14,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <sstream>
+#include <fstream>
+#include <iostream>
 #include "fix_nve_sphere_demsi.h"
 #include "atom.h"
 #include "domain.h"
@@ -24,6 +27,7 @@
 #include "error.h"
 #include "math_vector.h"
 #include "math_extra.h"
+#include "comm.h"
 
 using namespace LAMMPS_NS;
 using namespace FixConst;
@@ -31,6 +35,8 @@ using namespace MathExtra;
 
 enum{NONE,DIPOLE};
 enum{NODLM,DLM};
+
+//#define DEBUG_FIX_NVE_SPHERE_DEMSI
 
 /* ---------------------------------------------------------------------- */
 
@@ -111,7 +117,7 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
       vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
-          (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
+                      (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
       D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
       m_prime = rmass[i]/dtf;
       a00 = a11 = m_prime+D;
@@ -130,6 +136,53 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
 
       dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
       omega[i][2] += dtirotate * torque[i][2];
+
+#ifdef DEBUG_FIX_NVE_SPHERE_DEMSI
+      if (std::isnan(x[i][0]) or std::isinf(x[i][0]) or
+	  std::isnan(x[i][1]) or std::isinf(x[i][1]) or
+	  std::isnan(omega[i][2]) or std::isinf(omega[i][2])) {
+
+	{
+	  std::stringstream errorFilename;
+	  errorFilename << "log.lammps.error." << comm->me;
+	  std::ofstream errorFile;
+	  errorFile.open(errorFilename.str(), std::ios::out | std::ios::app);
+
+	  errorFile << "FixNVESphereDemsi::initial_integrate: Nan or Inf error: " << i << std::endl;
+	  if (std::isnan(ocean_vel[i][0]) or std::isnan(ocean_vel[i][0]))
+	    errorFile << "ocean_vel[i][0]: " << ocean_vel[i][0] << std::endl;
+	  if (std::isnan(ocean_vel[i][1]) or std::isnan(ocean_vel[i][1]))
+	    errorFile << "ocean_vel[i][1]: " << ocean_vel[i][1] << std::endl;
+	  if (std::isnan(ice_area[i]) or std::isnan(ice_area[i]))
+	    errorFile << "ice_area[i]: " << ice_area[i] << std::endl;
+	  if (std::isnan(rmass[i]) or std::isnan(rmass[i]))
+	    errorFile << "rmass[i]: " << rmass[i] << std::endl;
+	  if (std::isnan(coriolis[i]) or std::isnan(coriolis[i]))
+	    errorFile << "coriolis[i]: " << coriolis[i] << std::endl;
+	  if (std::isnan(f[i][0]) or std::isnan(f[i][0]))
+	    errorFile << "f[i][0]: " << f[i][0]  << std::endl;
+	  if (std::isnan(f[i][1]) or std::isnan(f[i][1]))
+	    errorFile << "f[i][1]: " << f[i][1] << std::endl;
+	  if (std::isnan(bvector[i][0]) or std::isnan(bvector[i][0]))
+	    errorFile << "bvector[i][0]: " << bvector[i][0] << std::endl;
+	  if (std::isnan(bvector[i][1]) or std::isnan(bvector[i][1]))
+	    errorFile << "bvector[i][1]: " << bvector[i][1] << std::endl;
+	  if (std::isnan(forcing[i][0]) or std::isnan(forcing[i][0]))
+	    errorFile << "forcing[i][0]: " << forcing[i][0] << std::endl;
+	  if (std::isnan(forcing[i][1]) or std::isnan(forcing[i][1]))
+	    errorFile << "forcing[i][1]: " << forcing[i][1] << std::endl;
+	  if (std::isnan(inertia) or std::isnan(inertia))
+	    errorFile << "inertia: " << inertia << std::endl;
+	  if (std::isnan(radius[i]) or std::isnan(radius[i]))
+	    errorFile << "radius[i]: " << radius[i] << std::endl;
+	  if (std::isnan(torque[i][2]) or std::isnan(torque[i][2]))
+	    errorFile << "torque[i][2]: " << torque[i][2] << std::endl;
+	  errorFile.close();
+	}
+
+      }
+#endif
+
     }
   }
 }
@@ -173,7 +226,7 @@ void FixNVESphereDemsi::final_integrate()
   for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
       vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
-          (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
+                      (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
       D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
       m_prime = rmass[i]/dtf;
       a00 = a11 = m_prime+D;
@@ -191,6 +244,53 @@ void FixNVESphereDemsi::final_integrate()
       omega[i][2] += dtirotate * torque[i][2];
       rke += (omega[i][0]*omega[i][0] + omega[i][1]*omega[i][1] +
               omega[i][2]*omega[i][2])*radius[i]*radius[i]*rmass[i];
+
+#ifdef DEBUG_FIX_NVE_SPHERE_DEMSI
+      if (std::isnan(v[i][0]) or std::isinf(v[i][0]) or
+	  std::isnan(v[i][1]) or std::isinf(v[i][1])) {
+
+	{
+	  std::stringstream errorFilename;
+	  errorFilename << "log.lammps.error." << comm->me;
+	  std::ofstream errorFile;
+	  errorFile.open(errorFilename.str(), std::ios::out | std::ios::app);
+
+	  errorFile << "FixNVESphereDemsi::initial_integrate: Nan or Inf error: " << i << std::endl;
+	  if (std::isnan(ocean_vel[i][0]) or std::isnan(ocean_vel[i][0]))
+	    errorFile << "ocean_vel[i][0]: " << ocean_vel[i][0] << std::endl;
+	  if (std::isnan(ocean_vel[i][1]) or std::isnan(ocean_vel[i][1]))
+	    errorFile << "ocean_vel[i][1]: " << ocean_vel[i][1] << std::endl;
+	  if (std::isnan(ice_area[i]) or std::isnan(ice_area[i]))
+	    errorFile << "ice_area[i]: " << ice_area[i] << std::endl;
+	  if (std::isnan(rmass[i]) or std::isnan(rmass[i]))
+	    errorFile << "rmass[i]: " << rmass[i] << std::endl;
+	  if (std::isnan(coriolis[i]) or std::isnan(coriolis[i]))
+	    errorFile << "coriolis[i]: " << coriolis[i] << std::endl;
+	  if (std::isnan(f[i][0]) or std::isnan(f[i][0]))
+	    errorFile << "f[i][0]: " << f[i][0]  << std::endl;
+	  if (std::isnan(f[i][1]) or std::isnan(f[i][1]))
+	    errorFile << "f[i][1]: " << f[i][1] << std::endl;
+	  if (std::isnan(bvector[i][0]) or std::isnan(bvector[i][0]))
+	    errorFile << "bvector[i][0]: " << bvector[i][0] << std::endl;
+	  if (std::isnan(bvector[i][1]) or std::isnan(bvector[i][1]))
+	    errorFile << "bvector[i][1]: " << bvector[i][1] << std::endl;
+	  if (std::isnan(forcing[i][0]) or std::isnan(forcing[i][0]))
+	    errorFile << "forcing[i][0]: " << forcing[i][0] << std::endl;
+	  if (std::isnan(forcing[i][1]) or std::isnan(forcing[i][1]))
+	    errorFile << "forcing[i][1]: " << forcing[i][1] << std::endl;
+	  if (std::isnan(inertia) or std::isnan(inertia))
+	    errorFile << "inertia: " << inertia << std::endl;
+	  if (std::isnan(radius[i]) or std::isnan(radius[i]))
+	    errorFile << "radius[i]: " << radius[i] << std::endl;
+	  if (std::isnan(torque[i][2]) or std::isnan(torque[i][2]))
+	    errorFile << "torque[i][2]: " << torque[i][2] << std::endl;
+
+	  errorFile.close();
+	}
+
+      }
+#endif
+
     }
 
 }
