@@ -80,6 +80,7 @@ Atom::Atom(LAMMPS *lmp) : Pointers(lmp)
   type = mask = NULL;
   image = NULL;
   x = v = f = NULL;
+  vn = NULL; // adding vn
 
   // charged and dipolar particles
 
@@ -352,7 +353,9 @@ void Atom::peratom_create()
   add_peratom("x",&x,DOUBLE,3);
   add_peratom("v",&v,DOUBLE,3);
   add_peratom("f",&f,DOUBLE,3,1);      // set per-thread flag
-
+  
+  add_peratom("vn",&vn,DOUBLE,3); // adding vn
+  
   add_peratom("rmass",&rmass,DOUBLE,0);
   add_peratom("q",&q,DOUBLE,0);
   add_peratom("mu",&mu,DOUBLE,4);
@@ -499,7 +502,7 @@ void Atom::peratom_create()
   add_peratom("coriolis",&coriolis,DOUBLE,0);
   add_peratom("ocean_vel",&ocean_vel,DOUBLE,1);
   add_peratom("bvector",&bvector,DOUBLE,1);
-
+  
   // end of customization section
   // --------------------------------------------------------------------
 }

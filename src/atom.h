@@ -59,7 +59,7 @@ class Atom : protected Pointers {
   tagint *tag;
   int *type,*mask;
   imageint *image;
-  double **x,**v,**f;
+  double **x,**v,**f,**vn; // adding vn
 
   // charged and dipolar particles
 
@@ -129,7 +129,7 @@ class Atom : protected Pointers {
   double *edpd_cv;               // heat capacity
   int cc_species;
 
-  //USER-DEMSI package
+  // USER-DEMSI package
   double **forcing;
   double *mean_thickness;
   double *min_thickness;

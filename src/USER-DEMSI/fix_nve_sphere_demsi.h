@@ -36,6 +36,9 @@ class FixNVESphereDemsi : public FixNVE {
   // if they are location/temperature dependent, they would have
   // to be made into per-particle properties)
   double ocean_drag, ocean_density;
+  
+  // control flag, sent to fix_integrator in demsi_external_force.cpp
+  int timeIntegrationFlag;
 
  protected:
   double inertia;
