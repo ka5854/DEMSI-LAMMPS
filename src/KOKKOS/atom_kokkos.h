@@ -27,7 +27,9 @@ class AtomKokkos : public Atom {
   DAT::tdual_x_array k_x;
   DAT::tdual_v_array k_v;
   DAT::tdual_f_array k_f;
-
+  
+  DAT::tdual_v_array k_vn; // adding vn
+  
   DAT::tdual_float_1d k_mass;
 
   DAT::tdual_float_1d k_q;
@@ -64,7 +66,6 @@ class AtomKokkos : public Atom {
   DAT::tdual_float_1d  k_iceConcentration;
   DAT::tdual_float_2d  k_forcing;
   DAT::tdual_float_2d  k_ocean_vel,k_bvector;
-                       
 
 // USER-DPD package
   DAT::tdual_efloat_1d k_uCond, k_uMech, k_uChem, k_uCG, k_uCGnew,

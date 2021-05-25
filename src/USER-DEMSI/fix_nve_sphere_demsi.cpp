@@ -47,6 +47,8 @@ FixNVESphereDemsi::FixNVESphereDemsi(LAMMPS *lmp, int narg, char **arg) :
 
   ocean_density = ocean_drag = 0;
 
+  timeIntegrationFlag = 0;
+
   if (domain->dimension != 2)
     error->all(FLERR,"Fix nve/sphere demsi requires 2d simulation");
   if (!atom->demsi_flag)
@@ -90,6 +92,7 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
   double **ocean_vel = atom->ocean_vel;
   double **bvector = atom->bvector;
   double **forcing = atom->forcing;
+  double **vn = atom->vn; // adding vn
 
   double D, vel_diff, m_prime;
   double a00, a01, a10, a11;
@@ -99,47 +102,96 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
 
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
-  if (igroup == atom->firstgroup) nlocal = atom->nfirst;
+//if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
   // set timestep here since dt may have changed or come via rRESPA
 
-  double dtfrotate = dtf / inertia;
+  double dtv = update->dt;
+  double dtf = 0.5 * update->dt;
   double dtirotate;
+  
   // update v,x,omega for all particles
   // d_omega/dt = torque / inertia
 
-  for (int i = 0; i < nlocal; i++) {
-    if (mask[i] & groupbit) {
-      vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
+  if (timeIntegrationFlag == 0) { // Hopkins-Verlet form
+
+    for (int i = 0; i < nlocal; i++) {
+      if (mask[i] & groupbit) {
+      
+        vn[i][0] = v[i][0];
+        vn[i][1] = v[i][1];
+        vn[i][2] = omega[i][2];
+      
+        vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
           (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
-      D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
-      m_prime = rmass[i]/dtf;
-      a00 = a11 = m_prime+D;
-      a10 = rmass[i]*coriolis[i];
-      a01 = -a10;
+        D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
+        m_prime = rmass[i]/dtf;
+        a00 = a11 = m_prime+D;
+        a10 = rmass[i]*coriolis[i];
+        a01 = -a10;
 
-      b0 = m_prime*v[i][0] + f[i][0] + bvector[i][0] + forcing[i][0] + D*ocean_vel[i][0];
-      b1 = m_prime*v[i][1] + f[i][1] + bvector[i][1] + forcing[i][1] + D*ocean_vel[i][1];
+        b0 = m_prime*v[i][0] + f[i][0] + bvector[i][0] + forcing[i][0] + D*ocean_vel[i][0];
+        b1 = m_prime*v[i][1] + f[i][1] + bvector[i][1] + forcing[i][1] + D*ocean_vel[i][1];
 
-      detinv = 1.0/(a00*a11 - a01*a10);
-      v[i][0] = detinv*( a11*b0 - a01*b1);
-      v[i][1] = detinv*(-a10*b0 + a00*b1);
+        detinv = 1.0/(a00*a11 - a01*a10);
+        v[i][0] = detinv*( a11*b0 - a01*b1);
+        v[i][1] = detinv*(-a10*b0 + a00*b1);
 
-      x[i][0] += dtv * v[i][0];
-      x[i][1] += dtv * v[i][1];
+        x[i][0] += dtv * v[i][0];
+        x[i][1] += dtv * v[i][1];
 
-      dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
-      omega[i][2] += dtirotate * torque[i][2];
-    }
-  }
-}
+//      dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
+        dtirotate = dtf/(inertia*radius[i]*radius[i]*rmass[i]);
+        omega[i][2] += dtirotate * torque[i][2];
+
+      } // end if (mask[i] & groupbit)
+    } // end for (int i = 0; i < nlocal; i++)
+    
+  } else { // rate form
+    
+    // load {v,omega} with the explicit accelerations (v^n + dtv*F/M)
+    
+    for (int i = 0; i < nlocal; i++) {
+      if (mask[i] & groupbit) {
+
+        vn[i][0] = v[i][0];
+        vn[i][1] = v[i][1];
+        vn[i][2] = omega[i][2];
+
+        x[i][0] += dtf * v[i][0]; // half step
+        x[i][1] += dtf * v[i][1];
+
+        vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
+          (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
+        D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
+//      m_prime = rmass[i]/dtf;
+        m_prime = rmass[i]/dtv;
+        a00 = a11 = m_prime+D;
+        a10 = rmass[i]*coriolis[i];
+        a01 = -a10;
+
+        b0 = m_prime*v[i][0] + f[i][0] + bvector[i][0] + forcing[i][0] + D*ocean_vel[i][0];
+        b1 = m_prime*v[i][1] + f[i][1] + bvector[i][1] + forcing[i][1] + D*ocean_vel[i][1];
+
+        detinv = 1.0/(a00*a11 - a01*a10);
+        v[i][0] = detinv*( a11*b0 - a01*b1);
+        v[i][1] = detinv*(-a10*b0 + a00*b1);
+
+//      dtirotate = dtf/(inertia*radius[i]*radius[i]*rmass[i]);
+        dtirotate = dtv/(inertia*radius[i]*radius[i]*rmass[i]);
+        omega[i][2] += dtirotate * torque[i][2];
+        
+      } // end if (mask[i] & groupbit)
+    } // end for (int i = 0; i < nlocal; i++)
+  
+  } // end if (timeIntegrationFlag == 0)
+} // end void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
 
 /* ---------------------------------------------------------------------- */
 
 void FixNVESphereDemsi::final_integrate()
 {
-  double dtfm,dtirotate;
-
+  double **x = atom->x;
   double **v = atom->v;
   double **f = atom->f;
   double **omega = atom->omega;
@@ -150,11 +202,12 @@ void FixNVESphereDemsi::final_integrate()
   double **ocean_vel = atom->ocean_vel;
   double **bvector = atom->bvector;
   double **forcing = atom->forcing;
+  double **vn = atom->vn; // adding vn
 
   double *radius = atom->radius;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
-  if (igroup == atom->firstgroup) nlocal = atom->nfirst;
+//if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
   double D, vel_diff, m_prime;
   double a00, a01, a10, a11;
@@ -164,14 +217,18 @@ void FixNVESphereDemsi::final_integrate()
 
   // set timestep here since dt may have changed or come via rRESPA
 
-  double dtfrotate = dtf / inertia;
+  double dtv = update->dt;
+  double dtf = 0.5 * update->dt;
+  double dtirotate;
 
   // update v,omega for all particles
   // d_omega/dt = torque / inertia
 
-  double rke = 0.0;
-  for (int i = 0; i < nlocal; i++)
-    if (mask[i] & groupbit) {
+  if (timeIntegrationFlag == 0) { // Hopkins-Verlet form
+  
+    double rke = 0.0;
+    for (int i = 0; i < nlocal; i++){
+      if (mask[i] & groupbit) {
       vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
           (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
       D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
@@ -187,10 +244,33 @@ void FixNVESphereDemsi::final_integrate()
       v[i][0] = detinv*( a11*b0 - a01*b1);
       v[i][1] = detinv*(-a10*b0 + a00*b1);
 
-      dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
+      dtirotate = dtf/(inertia*radius[i]*radius[i]*rmass[i]);
       omega[i][2] += dtirotate * torque[i][2];
+
       rke += (omega[i][0]*omega[i][0] + omega[i][1]*omega[i][1] +
               omega[i][2]*omega[i][2])*radius[i]*radius[i]*rmass[i];
-    }
+      } // end if (mask[i] & groupbit)
+    } // end for (int i = 0; i < nlocal; i++) 
+ 
+  } else { // rate form
+  
+    // v^{n+1}[0,1] is in vn[0,1], omega^{n+1} is in vn[2]
+ 
+    double rke = 0.0;
+    for (int i = 0; i < nlocal; i++){
+      if (mask[i] & groupbit) {
 
-}
+        v[i][0] = vn[i][0];
+        v[i][1] = vn[i][1];
+        omega[i][2] = vn[i][2];
+
+        x[i][0] += dtf * v[i][0]; // half step
+        x[i][1] += dtf * v[i][1];
+      
+      rke += (omega[i][0]*omega[i][0] + omega[i][1]*omega[i][1] +
+              omega[i][2]*omega[i][2])*radius[i]*radius[i]*rmass[i];
+      } // end  if (mask[i] & groupbit)
+    } // end for (int i = 0; i < nlocal; i++)
+  } // end if (timeIntegrationFlag == 0)
+} // end void FixNVESphereDemsi::final_integrate()
+
