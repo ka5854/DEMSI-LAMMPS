@@ -153,13 +153,11 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
     
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
-      
+
         vn[i][0] = v[i][0];
         vn[i][1] = v[i][1];
         vn[i][2] = omega[i][2];
-      
-//      x[i][0] += dtv * v[i][0]; // full step
-//      x[i][1] += dtv * v[i][1];
+
         x[i][0] += dtf * v[i][0]; // half step
         x[i][1] += dtf * v[i][1];
 
@@ -266,8 +264,6 @@ void FixNVESphereDemsi::final_integrate()
         v[i][1] = vn[i][1];
         omega[i][2] = vn[i][2];
 
-//      x[i][0] += dtv * v[i][0]; // full step
-//      x[i][1] += dtv * v[i][1];
         x[i][0] += dtf * v[i][0]; // half step
         x[i][1] += dtf * v[i][1];
       

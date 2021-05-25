@@ -34,8 +34,12 @@ public:
   virtual void transfer_history(double*, double*);
   double init_one(int, int);
 protected:
+  void compute_rate_exverlet();
   void compute_rate_explicit();
-//void compute_rate_implicit();
+  void compute_rate_implicit();
+  void back_substitute();
+
+  void allocate();
 
   int history_ndim;
 
