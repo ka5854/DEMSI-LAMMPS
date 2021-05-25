@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -44,6 +44,8 @@ AtomKokkos::~AtomKokkos()
   memoryKK->destroy_kokkos(k_v, v);
   memoryKK->destroy_kokkos(k_f, f);
 
+  memoryKK->destroy_kokkos(k_vn); // adding vn
+
   memoryKK->destroy_kokkos(k_mass, mass);
   memoryKK->destroy_kokkos(k_q, q);
 
@@ -77,8 +79,6 @@ AtomKokkos::~AtomKokkos()
   memoryKK->destroy_kokkos(k_improper_atom4, improper_atom4);
 
   // USER-DEMSI package
-  memoryKK->destroy_kokkos(k_orientation,orientation);
-  memoryKK->destroy_kokkos(k_momentOfInertia,momentOfInertia);
   memoryKK->destroy_kokkos(k_mean_thickness,mean_thickness);
   memoryKK->destroy_kokkos(k_min_thickness,min_thickness);
   memoryKK->destroy_kokkos(k_ridgingIceThickness,ridgingIceThickness);
@@ -92,11 +92,6 @@ AtomKokkos::~AtomKokkos()
   memoryKK->destroy_kokkos(k_ocean_vel,ocean_vel);
   memoryKK->destroy_kokkos(k_bvector,bvector);
 
-  // SPIN package
-  memoryKK->destroy_kokkos(k_sp, sp);
-  memoryKK->destroy_kokkos(k_fm, fm);
-  memoryKK->destroy_kokkos(k_fm_long, fm_long);
-
   // USER-DPD package
   memoryKK->destroy_kokkos(k_uCond,uCond);
   memoryKK->destroy_kokkos(k_uMech,uMech);
@@ -108,7 +103,7 @@ AtomKokkos::~AtomKokkos()
   memoryKK->destroy_kokkos(k_duChem,duChem);
 
   memoryKK->destroy_kokkos(k_dvector,dvector);
-  dvector = nullptr;
+  dvector = NULL;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -139,7 +134,7 @@ void AtomKokkos::sync_overlapping_device(const ExecutionSpace space, unsigned in
 
 void AtomKokkos::allocate_type_arrays()
 {
-  if (avec->mass_type == AtomVec::PER_TYPE) {
+  if (avec->mass_type) {
     k_mass = DAT::tdual_float_1d("Mass",ntypes+1);
     mass = k_mass.h_view.data();
     mass_setflag = new int[ntypes+1];
@@ -251,9 +246,9 @@ void AtomKokkos::sort()
    reallocate memory to the pointer selected by the mask
 ------------------------------------------------------------------------- */
 
-void AtomKokkos::grow(unsigned int mask) {
+void AtomKokkos::grow(unsigned int mask){
 
-  if (mask & SPECIAL_MASK) {
+  if (mask & SPECIAL_MASK){
     memoryKK->destroy_kokkos(k_special, special);
     sync(Device, mask);
     modified(Device, mask);
@@ -278,7 +273,9 @@ int AtomKokkos::add_custom(const char *name, int flag)
     nivector++;
     iname = (char **) memory->srealloc(iname,nivector*sizeof(char *),
                                        "atom:iname");
-    iname[index] = utils::strdup(name);
+    int n = strlen(name) + 1;
+    iname[index] = new char[n];
+    strcpy(iname[index],name);
     ivector = (int **) memory->srealloc(ivector,nivector*sizeof(int *),
                                         "atom:ivector");
     memory->create(ivector[index],nmax,"atom:ivector");
@@ -287,7 +284,9 @@ int AtomKokkos::add_custom(const char *name, int flag)
     ndvector++;
     dname = (char **) memory->srealloc(dname,ndvector*sizeof(char *),
                                        "atom:dname");
-    dname[index] = utils::strdup(name);
+    int n = strlen(name) + 1;
+    dname[index] = new char[n];
+    strcpy(dname[index],name);
     this->sync(Device,DVECTOR_MASK);
     memoryKK->grow_kokkos(k_dvector,dvector,ndvector,nmax,
                         "atom:dvector");
@@ -299,7 +298,7 @@ int AtomKokkos::add_custom(const char *name, int flag)
 
 /* ----------------------------------------------------------------------
    remove a custom variable of type flag = 0/1 for int/double at index
-   free memory for vector and name and set ptrs to a null pointer
+   free memory for vector and name and set ptrs to NULL
    ivector/dvector and iname/dname lists never shrink
 ------------------------------------------------------------------------- */
 
@@ -307,14 +306,14 @@ void AtomKokkos::remove_custom(int flag, int index)
 {
   if (flag == 0) {
     memory->destroy(ivector[index]);
-    ivector[index] = nullptr;
+    ivector[index] = NULL;
     delete [] iname[index];
-    iname[index] = nullptr;
+    iname[index] = NULL;
   } else {
     //memoryKK->destroy_kokkos(dvector);
-    dvector[index] = nullptr;
+    dvector[index] = NULL;
     delete [] dname[index];
-    dname[index] = nullptr;
+    dname[index] = NULL;
   }
 }
 

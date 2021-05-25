@@ -66,36 +66,28 @@ class AtomVecDemsi : public AtomVec {
   int pack_vel_hybrid(int, double *);
   void write_vel(FILE *, int, double **);
   int write_vel_hybrid(FILE *, double *);
-  double memory_usage();
-
+  bigint memory_usage();
+ 
  private:
   tagint *tag;
-  int *type;
-  int *mask;
+  int *type,*mask;
   imageint *image;
-  double **x;
-  double **v;
-  double **f;
-  double *radius;
-  double *rmass;
-  double *orientation;
-  double *momentOfInertia;
-  double **omega;
-  double **torque;
+  double **x,**v,**f,**vn; // adding vn
+  double *radius,*rmass;
+  double **omega,**torque;
   double ** forcing;
-  double *mean_thickness;
-  double *min_thickness;
-  double *ice_area;
-  double *coriolis;
-  double **ocean_vel;
-  double **bvector;
+  double * mean_thickness;
+  double * min_thickness;
+  double * ice_area;
+  double * coriolis;
+  double ** ocean_vel;
+  double ** bvector;
   int radvary;
   int **nspecial;
   tagint **special;
   int *num_bond;
   int **bond_type;
   tagint **bond_atom;
-
 };
 
 }

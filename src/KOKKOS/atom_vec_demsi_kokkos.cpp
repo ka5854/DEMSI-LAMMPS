@@ -45,7 +45,7 @@ AtomVecDemsiKokkos::AtomVecDemsiKokkos(LAMMPS *lmp) : AtomVecKokkos(lmp)
   comm_f_only = 0;
   size_forward = 3;
   size_reverse = 6;
-  size_border = 25;
+  size_border = 23;
   size_velocity = 6;
   size_data_atom = 7;
   size_data_vel = 7;
@@ -112,8 +112,6 @@ void AtomVecDemsiKokkos::grow(int n)
   memoryKK->grow_kokkos(atomKK->k_x,atomKK->x,nmax,"atom:x");
   memoryKK->grow_kokkos(atomKK->k_v,atomKK->v,nmax,"atom:v");
   memoryKK->grow_kokkos(atomKK->k_f,atomKK->f,nmax,"atom:f");
-  memoryKK->grow_kokkos(atomKK->k_orientation,atomKK->orientation,nmax,"atom:orientation");
-  memoryKK->grow_kokkos(atomKK->k_momentOfInertia,atomKK->momentOfInertia,nmax,"atom:momentOfInertia");
   memoryKK->grow_kokkos(atomKK->k_radius,atomKK->radius,nmax,"atom:radius");
   memoryKK->grow_kokkos(atomKK->k_rmass,atomKK->rmass,nmax,"atom:rmass");
   memoryKK->grow_kokkos(atomKK->k_omega,atomKK->omega,nmax,"atom:omega");
@@ -131,6 +129,8 @@ void AtomVecDemsiKokkos::grow(int n)
   memoryKK->grow_kokkos(atomKK->k_coriolis,atomKK->coriolis,nmax,"atom:coriolis");
   memoryKK->grow_kokkos(atomKK->k_ocean_vel,atomKK->ocean_vel,nmax,2,"atom:ocean_vel");
   memoryKK->grow_kokkos(atomKK->k_bvector,atomKK->bvector,nmax,2,"atom:bvector");
+
+  memoryKK->grow_kokkos(atomKK->k_vn,atomKK->vn,nmax,"atom:vn"); // adding vn
 
   memoryKK->grow_kokkos(atomKK->k_nspecial,atomKK->nspecial,nmax,3,"atom:nspecial");
   memoryKK->grow_kokkos(atomKK->k_special,atomKK->special,nmax,atom->maxspecial,"atom:special");
@@ -178,13 +178,6 @@ void AtomVecDemsiKokkos::grow_pointers()
   f = atomKK->f;
   d_f = atomKK->k_f.d_view;
   h_f = atomKK->k_f.h_view;
-
-  orientation = atomKK->orientation;
-  d_orientation = atomKK->k_orientation.d_view;
-  h_orientation = atomKK->k_orientation.h_view;
-  momentOfInertia = atomKK->momentOfInertia;
-  d_momentOfInertia = atomKK->k_momentOfInertia.d_view;
-  h_momentOfInertia = atomKK->k_momentOfInertia.h_view;
 
   radius = atomKK->radius;
   d_radius = atomKK->k_radius.d_view;
@@ -237,6 +230,10 @@ void AtomVecDemsiKokkos::grow_pointers()
   d_bvector = atomKK->k_bvector.d_view;
   h_bvector= atomKK->k_bvector.h_view;
 
+  vn = atomKK->vn;
+  d_vn = atomKK->k_vn.d_view; // adding vn
+  h_vn = atomKK->k_vn.h_view;
+
   nspecial = atomKK->nspecial;
   d_nspecial = atomKK->k_nspecial.d_view;
   h_nspecial = atomKK->k_nspecial.h_view;
@@ -280,8 +277,6 @@ void AtomVecDemsiKokkos::copy(int i, int j, int delflag)
   h_v(j,1) = h_v(i,1);
   h_v(j,2) = h_v(i,2);
 
-  h_orientation(j) = h_orientation(i);
-  h_momentOfInertia(j) = h_momentOfInertia(i);
   h_radius[j] = h_radius[i];
   h_rmass[j] = h_rmass[i];
   h_omega(j,0) = h_omega(i,0);
@@ -306,6 +301,10 @@ void AtomVecDemsiKokkos::copy(int i, int j, int delflag)
   h_ocean_vel(j,1) = h_ocean_vel(i,1);
   h_bvector(j,0) = h_bvector(i,0);
   h_bvector(j,1) = h_bvector(i,1);
+
+  h_vn(j,0) = h_vn(i,0);
+  h_vn(j,1) = h_vn(i,1); // adding vn
+  h_vn(j,2) = h_vn(i,2);
 
   h_nspecial(j,0) = h_nspecial(i,0);
   h_nspecial(j,1) = h_nspecial(i,1);
@@ -1758,8 +1757,6 @@ struct AtomVecDemsiKokkos_PackBorder {
   const typename ArrayTypes<DeviceType>::t_int_1d _type;
   const typename ArrayTypes<DeviceType>::t_int_1d _mask;
   const typename ArrayTypes<DeviceType>::t_float_2d _forcing;
-  typename ArrayTypes<DeviceType>::t_float_1d _orientation;
-  typename ArrayTypes<DeviceType>::t_float_1d _momentOfInertia;
   typename ArrayTypes<DeviceType>::t_float_1d _radius;
   typename ArrayTypes<DeviceType>::t_float_1d _rmass;
   typename ArrayTypes<DeviceType>::t_float_1d _mean_thickness;
@@ -1772,6 +1769,7 @@ struct AtomVecDemsiKokkos_PackBorder {
   typename ArrayTypes<DeviceType>::t_float_1d _iceConcentration;
   typename ArrayTypes<DeviceType>::t_float_1d _coriolis;
   typename ArrayTypes<DeviceType>::t_float_2d _ocean_vel,_bvector;
+  typename ArrayTypes<DeviceType>::t_v_array _vn; // adding vn
   X_FLOAT _dx,_dy,_dz;
 
   AtomVecDemsiKokkos_PackBorder(const typename ArrayTypes<DeviceType>::t_xfloat_2d &buf,
@@ -1781,8 +1779,6 @@ struct AtomVecDemsiKokkos_PackBorder {
 			      const typename ArrayTypes<DeviceType>::t_tagint_1d &tag,
 			      const typename ArrayTypes<DeviceType>::t_int_1d &type,
 			      const typename ArrayTypes<DeviceType>::t_int_1d &mask,
-			      const typename ArrayTypes<DeviceType>::t_float_1d &orientation,
-			      const typename ArrayTypes<DeviceType>::t_float_1d &momentOfInertia,
 			      const typename ArrayTypes<DeviceType>::t_float_1d &radius,
 			      const typename ArrayTypes<DeviceType>::t_float_1d &rmass,
 			      const typename ArrayTypes<DeviceType>::t_float_2d &forcing,
@@ -1797,16 +1793,10 @@ struct AtomVecDemsiKokkos_PackBorder {
 			      const typename ArrayTypes<DeviceType>::t_float_1d &coriolis,
 			      const typename ArrayTypes<DeviceType>::t_float_2d &ocean_vel,
 			      const typename ArrayTypes<DeviceType>::t_float_2d &bvector,
+			      const typename ArrayTypes<DeviceType>::t_v_array &vn, // adding vn
 			      const X_FLOAT &dx, const X_FLOAT &dy, const X_FLOAT &dz):
-    _buf(buf),
-    _list(list),
-    _iswap(iswap),
-    _x(x),
-    _tag(tag),
-    _type(type),
-    _mask(mask),
-    _orientation(orientation),
-    _momentOfInertia(momentOfInertia),
+    _buf(buf),_list(list),_iswap(iswap),
+    _x(x),_tag(tag),_type(type),_mask(mask),
     _radius(radius),
     _rmass(rmass),
     _forcing(forcing),
@@ -1821,6 +1811,7 @@ struct AtomVecDemsiKokkos_PackBorder {
     _coriolis(coriolis),
     _ocean_vel(ocean_vel),
     _bvector(bvector),
+    _vn(vn), // adding vn
     _dx(dx),_dy(dy),_dz(dz) {}
 
   KOKKOS_INLINE_FUNCTION
@@ -1838,25 +1829,26 @@ struct AtomVecDemsiKokkos_PackBorder {
     _buf(i,3)  = d_ubuf(_tag(j)).d;
     _buf(i,4)  = d_ubuf(_type(j)).d;
     _buf(i,5)  = d_ubuf(_mask(j)).d;
-    _buf(i,6)  = _orientation(j);
-    _buf(i,7)  = _momentOfInertia(j);
-    _buf(i,8)  = _radius(j);
-    _buf(i,9)  = _rmass(j);
-    _buf(i,10) = _forcing(j,0);
-    _buf(i,11) = _forcing(j,1);
-    _buf(i,12) = _mean_thickness(j);
-    _buf(i,13) = _min_thickness(j);
-    _buf(i,14) = _ridgingIceThickness(j);
-    _buf(i,15) = _ridgingIceThicknessWeight(j);
-    _buf(i,16) = _netToGrossClosingRatio(j);
-    _buf(i,17) = _changeEffectiveElementArea(j);
-    _buf(i,18) = _ice_area(j);
-    _buf(i,19) = _iceConcentration(j);
-    _buf(i,20) = _coriolis(j);
-    _buf(i,21) = _ocean_vel(j,0);
-    _buf(i,22) = _ocean_vel(j,1);
-    _buf(i,23) = _bvector(j,0);
-    _buf(i,24) = _bvector(j,1);
+    _buf(i,6)  = _radius(j);
+    _buf(i,7)  = _rmass(j);
+    _buf(i,8)  = _forcing(j,0);
+    _buf(i,9)  = _forcing(j,1);
+    _buf(i,10) = _mean_thickness(j);
+    _buf(i,11) = _min_thickness(j);
+    _buf(i,12) = _ridgingIceThickness(j);
+    _buf(i,13) = _ridgingIceThicknessWeight(j);
+    _buf(i,14) = _netToGrossClosingRatio(j);
+    _buf(i,15) = _changeEffectiveElementArea(j);
+    _buf(i,16) = _ice_area(j);
+    _buf(i,17) = _iceConcentration(j);
+    _buf(i,18) = _coriolis(j);
+    _buf(i,19) = _ocean_vel(j,0);
+    _buf(i,20) = _ocean_vel(j,1);
+    _buf(i,21) = _bvector(j,0);
+    _buf(i,22) = _bvector(j,1);
+    _buf(i,23) = _vn(j,0);
+    _buf(i,24) = _vn(j,1); // adding vn
+    _buf(i,25) = _vn(j,2);
   }
 };
 
@@ -1883,8 +1875,6 @@ int AtomVecDemsiKokkos::pack_border_kokkos(int n, DAT::tdual_int_2d k_sendlist, 
       AtomVecDemsiKokkos_PackBorder<LMPHostType,1> f(
         buf.view<LMPHostType>(), k_sendlist.view<LMPHostType>(),
         iswap,h_x,h_tag,h_type,h_mask,
-        h_orientation,
-        h_momentOfInertia,
         h_radius,
         h_rmass,
         h_forcing,
@@ -1899,14 +1889,13 @@ int AtomVecDemsiKokkos::pack_border_kokkos(int n, DAT::tdual_int_2d k_sendlist, 
         h_coriolis,
         h_ocean_vel,
         h_bvector,
+        h_vn, // adding vn
         dx,dy,dz);
       Kokkos::parallel_for(n,f);
     } else {
       AtomVecDemsiKokkos_PackBorder<LMPDeviceType,1> f(
         buf.view<LMPDeviceType>(), k_sendlist.view<LMPDeviceType>(),
         iswap,d_x,d_tag,d_type,d_mask,
-        d_orientation,
-        d_momentOfInertia,
         d_radius,
         d_rmass,
         d_forcing,
@@ -1921,6 +1910,7 @@ int AtomVecDemsiKokkos::pack_border_kokkos(int n, DAT::tdual_int_2d k_sendlist, 
         d_coriolis,
         d_ocean_vel,
         d_bvector,
+        d_vn, // adding vn
         dx,dy,dz);
       Kokkos::parallel_for(n,f);
     }
@@ -1930,8 +1920,6 @@ int AtomVecDemsiKokkos::pack_border_kokkos(int n, DAT::tdual_int_2d k_sendlist, 
       AtomVecDemsiKokkos_PackBorder<LMPHostType,0> f(
         buf.view<LMPHostType>(), k_sendlist.view<LMPHostType>(),
         iswap,h_x,h_tag,h_type,h_mask,
-        h_orientation,
-        h_momentOfInertia,
         h_radius,
         h_rmass,
         h_forcing,
@@ -1946,14 +1934,13 @@ int AtomVecDemsiKokkos::pack_border_kokkos(int n, DAT::tdual_int_2d k_sendlist, 
         h_coriolis,
         h_ocean_vel,
         h_bvector,
+        h_vn, // adding vn
         dx,dy,dz);
       Kokkos::parallel_for(n,f);
     } else {
       AtomVecDemsiKokkos_PackBorder<LMPDeviceType,0> f(
         buf.view<LMPDeviceType>(), k_sendlist.view<LMPDeviceType>(),
         iswap,d_x,d_tag,d_type,d_mask,
-        d_orientation,
-        d_momentOfInertia,
         d_radius,
         d_rmass,
         d_forcing,
@@ -1968,6 +1955,7 @@ int AtomVecDemsiKokkos::pack_border_kokkos(int n, DAT::tdual_int_2d k_sendlist, 
         d_coriolis,
         d_ocean_vel,
         d_bvector,
+        d_vn, // adding vn
         dx,dy,dz);
       Kokkos::parallel_for(n,f);
     }
@@ -1997,8 +1985,6 @@ int AtomVecDemsiKokkos::pack_border(int n, int *list, double *buf,
       buf[m++] = ubuf(h_tag(j)).d;
       buf[m++] = ubuf(h_type(j)).d;
       buf[m++] = ubuf(h_mask(j)).d;
-      buf[m++] = h_orientation(j);
-      buf[m++] = h_momentOfInertia(j);
       buf[m++] = h_radius(j);
       buf[m++] = h_rmass(j);
       buf[m++] = h_forcing(j,0);
@@ -2016,6 +2002,9 @@ int AtomVecDemsiKokkos::pack_border(int n, int *list, double *buf,
       buf[m++] = h_ocean_vel(j,1);
       buf[m++] = h_bvector(j,0);
       buf[m++] = h_bvector(j,1);
+      buf[m++] = h_vn(j,0);
+      buf[m++] = h_vn(j,1); // adding vn
+      buf[m++] = h_vn(j,2);
     }
   } else {
     if (domain->triclinic == 0) {
@@ -2035,8 +2024,6 @@ int AtomVecDemsiKokkos::pack_border(int n, int *list, double *buf,
       buf[m++] = ubuf(h_tag(j)).d;
       buf[m++] = ubuf(h_type(j)).d;
       buf[m++] = ubuf(h_mask(j)).d;
-      buf[m++] = h_orientation(j);
-      buf[m++] = h_momentOfInertia(j);
       buf[m++] = h_radius(j);
       buf[m++] = h_rmass(j);
       buf[m++] = h_forcing(j,0);
@@ -2054,6 +2041,9 @@ int AtomVecDemsiKokkos::pack_border(int n, int *list, double *buf,
       buf[m++] = h_ocean_vel(j,1);
       buf[m++] = h_bvector(j,0);
       buf[m++] = h_bvector(j,1);
+      buf[m++] = h_vn(j,0);
+      buf[m++] = h_vn(j,1); // adding vn
+      buf[m++] = h_vn(j,2);
     }
   }
 
@@ -2077,8 +2067,6 @@ struct AtomVecDemsiKokkos_PackBorderVel {
   const typename ArrayTypes<DeviceType>::t_tagint_1d _tag;
   const typename ArrayTypes<DeviceType>::t_int_1d _type;
   const typename ArrayTypes<DeviceType>::t_int_1d _mask;
-  typename ArrayTypes<DeviceType>::t_float_1d _orientation;
-  typename ArrayTypes<DeviceType>::t_float_1d _momentOfInertia;
   typename ArrayTypes<DeviceType>::t_float_1d _radius;
   typename ArrayTypes<DeviceType>::t_float_1d _rmass;
   typename ArrayTypes<DeviceType>::t_float_1d _mean_thickness;
@@ -2093,6 +2081,7 @@ struct AtomVecDemsiKokkos_PackBorderVel {
   typename ArrayTypes<DeviceType>::t_float_1d _coriolis;
   typename ArrayTypes<DeviceType>::t_float_2d _ocean_vel;
   typename ArrayTypes<DeviceType>::t_float_2d _bvector;
+  typename ArrayTypes<DeviceType>::t_v_array _vn; // adding vn
   typename ArrayTypes<DeviceType>::t_v_array _v;
   typename ArrayTypes<DeviceType>::t_v_array _omega;
   X_FLOAT _dx,_dy,_dz, _dvx, _dvy, _dvz;
@@ -2106,8 +2095,6 @@ struct AtomVecDemsiKokkos_PackBorderVel {
     const typename ArrayTypes<DeviceType>::t_tagint_1d &tag,
     const typename ArrayTypes<DeviceType>::t_int_1d &type,
     const typename ArrayTypes<DeviceType>::t_int_1d &mask,
-    const typename ArrayTypes<DeviceType>::t_float_1d &orientation,
-    const typename ArrayTypes<DeviceType>::t_float_1d &momentOfInertia,
     const typename ArrayTypes<DeviceType>::t_float_1d &radius,
     const typename ArrayTypes<DeviceType>::t_float_1d &rmass,
     const typename ArrayTypes<DeviceType>::t_float_2d &forcing,
@@ -2122,20 +2109,14 @@ struct AtomVecDemsiKokkos_PackBorderVel {
     const typename ArrayTypes<DeviceType>::t_float_1d &coriolis,
     const typename ArrayTypes<DeviceType>::t_float_2d &ocean_vel,
     const typename ArrayTypes<DeviceType>::t_float_2d &bvector,
+    const typename ArrayTypes<DeviceType>::t_v_array &vn, // adding vn
     const typename ArrayTypes<DeviceType>::t_v_array &v,
     const typename ArrayTypes<DeviceType>::t_v_array &omega,
     const X_FLOAT &dx, const X_FLOAT &dy, const X_FLOAT &dz,
     const X_FLOAT &dvx, const X_FLOAT &dvy, const X_FLOAT &dvz,
     const int &deform_groupbit):
-    _buf(buf),
-    _list(list),
-    _iswap(iswap),
-    _x(x),
-    _tag(tag),
-    _type(type),
-    _mask(mask),
-    _orientation(orientation),
-    _momentOfInertia(momentOfInertia),
+    _buf(buf),_list(list),_iswap(iswap),
+    _x(x),_tag(tag),_type(type),_mask(mask),
     _radius(radius),
     _rmass(rmass),
     _forcing(forcing),
@@ -2150,6 +2131,7 @@ struct AtomVecDemsiKokkos_PackBorderVel {
     _coriolis(coriolis),
     _ocean_vel(ocean_vel),
     _bvector(bvector),
+    _vn(vn), // adding vn
     _v(v), _omega(omega),
     _dx(dx),_dy(dy),_dz(dz),
     _dvx(dvx),_dvy(dvy),_dvz(dvz),
@@ -2175,40 +2157,41 @@ struct AtomVecDemsiKokkos_PackBorderVel {
     _buf(i,3) = d_ubuf(_tag(j)).d;
     _buf(i,4) = d_ubuf(_type(j)).d;
     _buf(i,5) = d_ubuf(_mask(j)).d;
-    _buf(i,6) = _orientation(j);
-    _buf(i,7) = _momentOfInertia(j);
-    _buf(i,8) = _radius(j);
-    _buf(i,9) = _rmass(j);
-    _buf(i,10) = _forcing(j,0);
-    _buf(i,11) = _forcing(j,1);
-    _buf(i,12) = _mean_thickness(j);
-    _buf(i,13) = _min_thickness(j);
-    _buf(i,14) = _ridgingIceThickness(j);
-    _buf(i,15) = _ridgingIceThicknessWeight(j);
-    _buf(i,16) = _netToGrossClosingRatio(j);
-    _buf(i,17) = _changeEffectiveElementArea(j);
-    _buf(i,18) = _ice_area(j);
-    _buf(i,19) = _iceConcentration(j);
-    _buf(i,20) = _coriolis(j);
-    _buf(i,21) = _ocean_vel(j,0);
-    _buf(i,22) = _ocean_vel(j,1);
-    _buf(i,23) = _bvector(j,0);
-    _buf(i,24) = _bvector(j,1);
+    _buf(i,6) = _radius(j);
+    _buf(i,7) = _rmass(j);
+    _buf(i,8) = _forcing(j,0);
+    _buf(i,9) = _forcing(j,1);
+    _buf(i,10) = _mean_thickness(j);
+    _buf(i,11) = _min_thickness(j);
+    _buf(i,12) = _ridgingIceThickness(j);
+    _buf(i,13) = _ridgingIceThicknessWeight(j);
+    _buf(i,14) = _netToGrossClosingRatio(j);
+    _buf(i,15) = _changeEffectiveElementArea(j);
+    _buf(i,16) = _ice_area(j);
+    _buf(i,17) = _iceConcentration(j);
+    _buf(i,18) = _coriolis(j);
+    _buf(i,19) = _ocean_vel(j,0);
+    _buf(i,20) = _ocean_vel(j,1);
+    _buf(i,21) = _bvector(j,0);
+    _buf(i,22) = _bvector(j,1);
+    _buf(i,23) = _vn(j,0);
+    _buf(i,24) = _vn(j,1); // adding vn
+    _buf(i,25) = _vn(j,2);
     if (DEFORM_VREMAP) {
       if (_mask(i) & _deform_groupbit) {
-        _buf(i,25) = _v(j,0) + _dvx;
-        _buf(i,26) = _v(j,1) + _dvy;
-        _buf(i,27) = _v(j,2) + _dvz;
+        _buf(i,26) = _v(j,0) + _dvx;
+        _buf(i,27) = _v(j,1) + _dvy; // adding vn
+        _buf(i,28) = _v(j,2) + _dvz;
       }
     }
     else {
-      _buf(i,25) = _v(j,0);
-      _buf(i,26) = _v(j,1);
-      _buf(i,27) = _v(j,2);
+      _buf(i,29) = _v(j,0);
+      _buf(i,30) = _v(j,1); // adding vn
+      _buf(i,31) = _v(j,2);
     }
-    _buf(i,28) = _omega(j,0);
-    _buf(i,29) = _omega(j,1);
-    _buf(i,30) = _omega(j,2);
+    _buf(i,32) = _omega(j,0);
+    _buf(i,33) = _omega(j,1); // adding vn
+    _buf(i,34) = _omega(j,2);
   }
 };
 
@@ -2238,8 +2221,6 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
         AtomVecDemsiKokkos_PackBorderVel<LMPHostType,1,0> f(
           buf.view<LMPHostType>(), k_sendlist.view<LMPHostType>(),
           iswap,h_x,h_tag,h_type,h_mask,
-          h_orientation,
-          h_momentOfInertia,
           h_radius,
           h_rmass,
           h_forcing,
@@ -2254,6 +2235,7 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
           h_coriolis,
           h_ocean_vel,
           h_bvector,
+          h_vn, // adding vn
           h_v,
           h_omega,
           dx,dy,dz,dvx,dvy,dvz,
@@ -2263,8 +2245,6 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
         AtomVecDemsiKokkos_PackBorderVel<LMPDeviceType,1,0> f(
           buf.view<LMPDeviceType>(), k_sendlist.view<LMPDeviceType>(),
           iswap,d_x,d_tag,d_type,d_mask,
-          d_orientation,
-          d_momentOfInertia,
           d_radius,
           d_rmass,
           d_forcing,
@@ -2279,6 +2259,7 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
           d_coriolis,
           d_ocean_vel,
           d_bvector,
+          d_vn, // adding vn
           d_v,
           d_omega,
           dx,dy,dz,dvx,dvy,dvz,
@@ -2294,8 +2275,6 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
         AtomVecDemsiKokkos_PackBorderVel<LMPHostType,1,1> f(
           buf.view<LMPHostType>(), k_sendlist.view<LMPHostType>(),
           iswap,h_x,h_tag,h_type,h_mask,
-          h_orientation,
-          h_momentOfInertia,
           h_radius,
           h_rmass,
           h_forcing,
@@ -2310,6 +2289,7 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
           h_coriolis,
           h_ocean_vel,
           h_bvector,
+          h_vn, // adding vn
           h_v,
           h_omega,
           dx,dy,dz,dvx,dvy,dvz,
@@ -2319,8 +2299,6 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
         AtomVecDemsiKokkos_PackBorderVel<LMPDeviceType,1,1> f(
           buf.view<LMPDeviceType>(), k_sendlist.view<LMPDeviceType>(),
           iswap,d_x,d_tag,d_type,d_mask,
-          d_orientation,
-          d_momentOfInertia,
           d_radius,
           d_rmass,
           d_forcing,
@@ -2335,6 +2313,7 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
           d_coriolis,
           d_ocean_vel,
           d_bvector,
+          d_vn, // adding vn
           d_v,
           d_omega,
           dx,dy,dz,dvx,dvy,dvz,
@@ -2347,8 +2326,6 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
       AtomVecDemsiKokkos_PackBorderVel<LMPHostType,0,0> f(
         buf.view<LMPHostType>(), k_sendlist.view<LMPHostType>(),
         iswap,h_x,h_tag,h_type,h_mask,
-        h_orientation,
-        h_momentOfInertia,
         h_radius,
         h_rmass,
         h_forcing,
@@ -2363,6 +2340,7 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
         h_coriolis,
         h_ocean_vel,
         h_bvector,
+        h_vn, // adding vn
         h_v,
         h_omega,
         dx,dy,dz,dvx,dvy,dvz,
@@ -2372,8 +2350,6 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
       AtomVecDemsiKokkos_PackBorderVel<LMPDeviceType,0,0> f(
         buf.view<LMPDeviceType>(), k_sendlist.view<LMPDeviceType>(),
         iswap,d_x,d_tag,d_type,d_mask,
-        d_orientation,
-        d_momentOfInertia,
         d_radius,
         d_rmass,
         d_forcing,
@@ -2388,6 +2364,7 @@ int AtomVecDemsiKokkos::pack_border_vel_kokkos(
         d_coriolis,
         d_ocean_vel,
         d_bvector,
+        d_vn, // adding vn
         d_v,
         d_omega,
         dx,dy,dz,dvx,dvy,dvz,
@@ -2419,8 +2396,6 @@ int AtomVecDemsiKokkos::pack_border_vel(int n, int *list, double *buf,
       buf[m++] = ubuf(h_tag(j)).d;
       buf[m++] = ubuf(h_type(j)).d;
       buf[m++] = ubuf(h_mask(j)).d;
-      buf[m++] = h_orientation(j);
-      buf[m++] = h_momentOfInertia(j);
       buf[m++] = h_radius(j);
       buf[m++] = h_rmass(j);
       buf[m++] = h_forcing(j,0);
@@ -2438,6 +2413,9 @@ int AtomVecDemsiKokkos::pack_border_vel(int n, int *list, double *buf,
       buf[m++] = h_ocean_vel(j,1);
       buf[m++] = h_bvector(j,0);
       buf[m++] = h_bvector(j,1);
+      buf[m++] = h_vn(j,0);
+      buf[m++] = h_vn(j,1); // adding vn
+      buf[m++] = h_vn(j,2);
       buf[m++] = h_v(j,0);
       buf[m++] = h_v(j,1);
       buf[m++] = h_v(j,2);
@@ -2464,8 +2442,6 @@ int AtomVecDemsiKokkos::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = ubuf(h_tag(j)).d;
         buf[m++] = ubuf(h_type(j)).d;
         buf[m++] = ubuf(h_mask(j)).d;
-        buf[m++] = h_orientation(j);
-        buf[m++] = h_momentOfInertia(j);
         buf[m++] = h_radius(j);
         buf[m++] = h_rmass(j);
         buf[m++] = h_forcing(j,0);
@@ -2483,6 +2459,9 @@ int AtomVecDemsiKokkos::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = h_ocean_vel(j,1);
         buf[m++] = h_bvector(j,0);
         buf[m++] = h_bvector(j,1);
+        buf[m++] = h_vn(j,0);
+        buf[m++] = h_vn(j,1); // adding vn
+        buf[m++] = h_vn(j,2);
         buf[m++] = h_v(j,0);
         buf[m++] = h_v(j,1);
         buf[m++] = h_v(j,2);
@@ -2502,8 +2481,6 @@ int AtomVecDemsiKokkos::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = ubuf(h_tag[j]).d;
         buf[m++] = ubuf(h_type[j]).d;
         buf[m++] = ubuf(h_mask[j]).d;
-        buf[m++] = h_orientation(j);
-        buf[m++] = h_momentOfInertia(j);
         buf[m++] = h_radius[j];
         buf[m++] = h_rmass[j];
         buf[m++] = h_forcing(j,0);
@@ -2521,6 +2498,9 @@ int AtomVecDemsiKokkos::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = h_ocean_vel(j,1);
         buf[m++] = h_bvector(j,0);
         buf[m++] = h_bvector(j,1);
+        buf[m++] = h_vn(j,0);
+        buf[m++] = h_vn(j,1); // adding vn
+        buf[m++] = h_vn(j,2);
         if (mask[i] & deform_groupbit) {
           buf[m++] = h_v(j,0) + dvx;
           buf[m++] = h_v(j,1) + dvy;
@@ -2570,8 +2550,6 @@ struct AtomVecDemsiKokkos_UnpackBorder {
   typename ArrayTypes<DeviceType>::t_tagint_1d _tag;
   typename ArrayTypes<DeviceType>::t_int_1d _type;
   typename ArrayTypes<DeviceType>::t_int_1d _mask;
-  typename ArrayTypes<DeviceType>::t_float_1d _orientation;
-  typename ArrayTypes<DeviceType>::t_float_1d _momentOfInertia;
   typename ArrayTypes<DeviceType>::t_float_1d _radius;
   typename ArrayTypes<DeviceType>::t_float_1d _rmass;
   typename ArrayTypes<DeviceType>::t_float_2d _forcing;
@@ -2586,6 +2564,7 @@ struct AtomVecDemsiKokkos_UnpackBorder {
   typename ArrayTypes<DeviceType>::t_float_1d _coriolis;
   typename ArrayTypes<DeviceType>::t_float_2d _ocean_vel;
   typename ArrayTypes<DeviceType>::t_float_2d _bvector;
+  typename ArrayTypes<DeviceType>::t_v_array _vn; // adding vn
   int _first;
 
   AtomVecDemsiKokkos_UnpackBorder(
@@ -2594,8 +2573,6 @@ struct AtomVecDemsiKokkos_UnpackBorder {
     typename ArrayTypes<DeviceType>::t_tagint_1d &tag,
     typename ArrayTypes<DeviceType>::t_int_1d &type,
     typename ArrayTypes<DeviceType>::t_int_1d &mask,
-    typename ArrayTypes<DeviceType>::t_float_1d &orientation,
-    typename ArrayTypes<DeviceType>::t_float_1d &momentOfInertia,
     const typename ArrayTypes<DeviceType>::t_float_1d &radius,
     const typename ArrayTypes<DeviceType>::t_float_1d &rmass,
     typename ArrayTypes<DeviceType>::t_float_2d &forcing,
@@ -2610,14 +2587,9 @@ struct AtomVecDemsiKokkos_UnpackBorder {
     typename ArrayTypes<DeviceType>::t_float_1d &coriolis,
     typename ArrayTypes<DeviceType>::t_float_2d &ocean_vel,
     typename ArrayTypes<DeviceType>::t_float_2d &bvector,
+    typename ArrayTypes<DeviceType>::t_v_array &vn, // adding vn
     const int& first):
-    _buf(buf),
-    _x(x),
-    _tag(tag),
-    _type(type),
-    _mask(mask),
-    _orientation(orientation),
-    _momentOfInertia(momentOfInertia),
+    _buf(buf),_x(x),_tag(tag),_type(type),_mask(mask),
     _radius(radius),
     _rmass(rmass),
     _forcing(forcing),
@@ -2632,6 +2604,7 @@ struct AtomVecDemsiKokkos_UnpackBorder {
     _coriolis(coriolis),
     _ocean_vel(ocean_vel),
     _bvector(bvector),
+    _vn(vn), // adding vn
     _first(first) {};
 
   KOKKOS_INLINE_FUNCTION
@@ -2642,25 +2615,26 @@ struct AtomVecDemsiKokkos_UnpackBorder {
     _tag(i+_first) = static_cast<tagint> (d_ubuf(_buf(i,3)).i);
     _type(i+_first) = static_cast<int>  (d_ubuf(_buf(i,4)).i);
     _mask(i+_first) = static_cast<int>  (d_ubuf(_buf(i,5)).i);
-    _orientation(i+_first) = _buf(i,6);
-    _momentOfInertia(i+_first) = _buf(i,7);
-    _radius(i+_first) = _buf(i,8);
-    _rmass(i+_first) = _buf(i,9);
-    _forcing(i+_first,0) = _buf(i,10);
-    _forcing(i+_first,1) = _buf(i,11);
-    _mean_thickness(i+_first) = _buf(i,12);
-    _min_thickness(i+_first) = _buf(i,13);
-    _ridgingIceThickness(i+_first) = _buf(i,14);
-    _ridgingIceThicknessWeight(i+_first) = _buf(i,15);
-    _netToGrossClosingRatio(i+_first) = _buf(i,16);
-    _changeEffectiveElementArea(i+_first) = _buf(i,17);
-    _ice_area(i+_first) = _buf(i,18);
-    _iceConcentration(i+_first) = _buf(i,19);
-    _coriolis(i+_first) = _buf(i,20);
-    _ocean_vel(i+_first,0) = _buf(i,21);
-    _ocean_vel(i+_first,1) = _buf(i,22);
-    _bvector(i+_first,0) = _buf(i,23);
-    _bvector(i+_first,1) = _buf(i,24);
+    _radius(i+_first) = _buf(i,6);
+    _rmass(i+_first) = _buf(i,7);
+    _forcing(i+_first,0) = _buf(i,8);
+    _forcing(i+_first,1) = _buf(i,9);
+    _mean_thickness(i+_first) = _buf(i,10);
+    _min_thickness(i+_first) = _buf(i,11);
+    _ridgingIceThickness(i+_first) = _buf(i,12);
+    _ridgingIceThicknessWeight(i+_first) = _buf(i,13);
+    _netToGrossClosingRatio(i+_first) = _buf(i,14);
+    _changeEffectiveElementArea(i+_first) = _buf(i,15);
+    _ice_area(i+_first) = _buf(i,16);
+    _iceConcentration(i+_first) = _buf(i,17);
+    _coriolis(i+_first) = _buf(i,18);
+    _ocean_vel(i+_first,0) = _buf(i,19);
+    _ocean_vel(i+_first,1) = _buf(i,20);
+    _bvector(i+_first,0) = _buf(i,21);
+    _bvector(i+_first,1) = _buf(i,22);
+    _vn(i+_first,0) = _buf(i,23);
+    _vn(i+_first,1) = _buf(i,24); // adding vn
+    _vn(i+_first,2) = _buf(i,25);
   }
 };
 
@@ -2674,8 +2648,6 @@ void AtomVecDemsiKokkos::unpack_border_kokkos(const int &n, const int &first,
   if(space==Host) {
     struct AtomVecDemsiKokkos_UnpackBorder<LMPHostType> f(buf.view<LMPHostType>(),
       h_x,h_tag,h_type,h_mask,
-      h_orientation,
-      h_momentOfInertia,
       h_radius,
       h_rmass,
       h_forcing,
@@ -2690,13 +2662,12 @@ void AtomVecDemsiKokkos::unpack_border_kokkos(const int &n, const int &first,
       h_coriolis,
       h_ocean_vel,
       h_bvector,
+      h_vn, // adding vn
       first);
     Kokkos::parallel_for(n,f);
   } else {
     struct AtomVecDemsiKokkos_UnpackBorder<LMPDeviceType> f(buf.view<LMPDeviceType>(),
       d_x,d_tag,d_type,d_mask,
-      d_orientation,
-      d_momentOfInertia,
       d_radius,
       d_rmass,
       d_forcing,
@@ -2711,6 +2682,7 @@ void AtomVecDemsiKokkos::unpack_border_kokkos(const int &n, const int &first,
       d_coriolis,
       d_ocean_vel,
       d_bvector,
+      d_vn, // adding vn
       first);
     Kokkos::parallel_for(n,f);
   }
@@ -2734,8 +2706,6 @@ void AtomVecDemsiKokkos::unpack_border(int n, int first, double *buf)
     h_tag[i] = (tagint) ubuf(buf[m++]).i;
     h_type[i] = (int) ubuf(buf[m++]).i;
     h_mask[i] = (int) ubuf(buf[m++]).i;
-    h_orientation[i] = buf[m++];
-    h_momentOfInertia[i] = buf[m++];
     h_radius[i] = buf[m++];
     h_rmass[i] = buf[m++];
     h_forcing(i,0) = buf[m++];
@@ -2753,6 +2723,9 @@ void AtomVecDemsiKokkos::unpack_border(int n, int first, double *buf)
     h_ocean_vel(i,1) = buf[m++];
     h_bvector(i,0) = buf[m++];
     h_bvector(i,1) = buf[m++];
+    h_vn(i,0) = buf[m++];
+    h_vn(i,1) = buf[m++];
+    h_vn(i,2) = buf[m++];
   }
 
   if (atom->nextra_border)
@@ -2775,8 +2748,6 @@ struct AtomVecDemsiKokkos_UnpackBorderVel {
   typename ArrayTypes<DeviceType>::t_tagint_1d _tag;
   typename ArrayTypes<DeviceType>::t_int_1d _type;
   typename ArrayTypes<DeviceType>::t_int_1d _mask;
-  typename ArrayTypes<DeviceType>::t_float_1d _orientation;
-  typename ArrayTypes<DeviceType>::t_float_1d _momentOfInertia;
   typename ArrayTypes<DeviceType>::t_float_1d _radius;
   typename ArrayTypes<DeviceType>::t_float_1d _rmass;
   typename ArrayTypes<DeviceType>::t_float_2d _forcing;
@@ -2791,6 +2762,7 @@ struct AtomVecDemsiKokkos_UnpackBorderVel {
   typename ArrayTypes<DeviceType>::t_float_1d _coriolis;
   typename ArrayTypes<DeviceType>::t_float_2d _ocean_vel;
   typename ArrayTypes<DeviceType>::t_float_2d _bvector;
+  typename ArrayTypes<DeviceType>::t_v_array _vn; // adding vn
   typename ArrayTypes<DeviceType>::t_v_array _v;
   typename ArrayTypes<DeviceType>::t_v_array _omega;
   int _first;
@@ -2801,8 +2773,6 @@ struct AtomVecDemsiKokkos_UnpackBorderVel {
     const typename ArrayTypes<DeviceType>::t_tagint_1d &tag,
     const typename ArrayTypes<DeviceType>::t_int_1d &type,
     const typename ArrayTypes<DeviceType>::t_int_1d &mask,
-    const typename ArrayTypes<DeviceType>::t_float_1d &orientation,
-    const typename ArrayTypes<DeviceType>::t_float_1d &momentOfInertia,
     const typename ArrayTypes<DeviceType>::t_float_1d &radius,
     const typename ArrayTypes<DeviceType>::t_float_1d &rmass,
     const typename ArrayTypes<DeviceType>::t_float_2d &forcing,
@@ -2817,16 +2787,11 @@ struct AtomVecDemsiKokkos_UnpackBorderVel {
     const typename ArrayTypes<DeviceType>::t_float_1d &coriolis,
     const typename ArrayTypes<DeviceType>::t_float_2d &ocean_vel,
     const typename ArrayTypes<DeviceType>::t_float_2d &bvector,
+    const typename ArrayTypes<DeviceType>::t_v_array &vn, // adding vn
     const typename ArrayTypes<DeviceType>::t_v_array &v,
     const typename ArrayTypes<DeviceType>::t_v_array &omega,
     const int& first):
-    _buf(buf),
-    _x(x),
-    _tag(tag),
-    _type(type),
-    _mask(mask),
-    _orientation(orientation),
-    _momentOfInertia(momentOfInertia),
+    _buf(buf),_x(x),_tag(tag),_type(type),_mask(mask),
     _radius(radius),
     _rmass(rmass),
     _forcing(forcing),
@@ -2841,6 +2806,7 @@ struct AtomVecDemsiKokkos_UnpackBorderVel {
     _coriolis(coriolis),
     _ocean_vel(ocean_vel),
     _bvector(bvector),
+    _vn(vn), // adding vn
     _v(v),
     _omega(omega),
     _first(first)
@@ -2858,31 +2824,32 @@ struct AtomVecDemsiKokkos_UnpackBorderVel {
     _tag(i+_first) = static_cast<tagint> (d_ubuf(_buf(i,3)).i);
     _type(i+_first) = static_cast<int>  (d_ubuf(_buf(i,4)).i);
     _mask(i+_first) = static_cast<int>  (d_ubuf(_buf(i,5)).i);
-    _orientation(i+_first) = _buf(i,6);
-    _momentOfInertia(i+_first) = _buf(i,7);
-    _radius(i+_first) = _buf(i,8);
-    _rmass(i+_first) = _buf(i,9);
-    _forcing(i+_first,0) = _buf(i,10);
-    _forcing(i+_first,1) = _buf(i,11);
-    _mean_thickness(i+_first) = _buf(i,12);
-    _min_thickness(i+_first) = _buf(i,13);
-    _ridgingIceThickness(i+_first) = _buf(i,14);
-    _ridgingIceThicknessWeight(i+_first) = _buf(i,15);
-    _netToGrossClosingRatio(i+_first) = _buf(i,16);
-    _changeEffectiveElementArea(i+_first) = _buf(i,17);
-    _ice_area(i+_first) = _buf(i,18);
-    _iceConcentration(i+_first) = _buf(i,19);
-    _coriolis(i+_first) = _buf(i,20);
-    _ocean_vel(i+_first,0) = _buf(i,21);
-    _ocean_vel(i+_first,1) = _buf(i,22);
-    _bvector(i+_first,0) = _buf(i,23);
-    _bvector(i+_first,1) = _buf(i,24);
-    _v(i+_first,0) = _buf(i,25);
-    _v(i+_first,1) = _buf(i,26);
-    _v(i+_first,2) = _buf(i,27);
-    _omega(i+_first,0) = _buf(i,28);
-    _omega(i+_first,1) = _buf(i,29);
-    _omega(i+_first,2) = _buf(i,30);
+    _radius(i+_first) = _buf(i,6);
+    _rmass(i+_first) = _buf(i,7);
+    _forcing(i+_first,0) = _buf(i,8);
+    _forcing(i+_first,1) = _buf(i,9);
+    _mean_thickness(i+_first) = _buf(i,10);
+    _min_thickness(i+_first) = _buf(i,11);
+    _ridgingIceThickness(i+_first) = _buf(i,12);
+    _ridgingIceThicknessWeight(i+_first) = _buf(i,13);
+    _netToGrossClosingRatio(i+_first) = _buf(i,14);
+    _changeEffectiveElementArea(i+_first) = _buf(i,15);
+    _ice_area(i+_first) = _buf(i,16);
+    _iceConcentration(i+_first) = _buf(i,17);
+    _coriolis(i+_first) = _buf(i,18);
+    _ocean_vel(i+_first,0) = _buf(i,19);
+    _ocean_vel(i+_first,1) = _buf(i,20);
+    _bvector(i+_first,0) = _buf(i,21);
+    _bvector(i+_first,1) = _buf(i,22);
+    _vn(i+_first,0) = _buf(i,23);
+    _vn(i+_first,1) = _buf(i,24); // adding vn
+    _vn(i+_first,2) = _buf(i,25);
+    _v(i+_first,0) = _buf(i,26);
+    _v(i+_first,1) = _buf(i,27); // adding vn
+    _v(i+_first,2) = _buf(i,28);
+    _omega(i+_first,0) = _buf(i,29);
+    _omega(i+_first,1) = _buf(i,30); // adding vn
+    _omega(i+_first,2) = _buf(i,31);
   }
 };
 
@@ -2895,8 +2862,6 @@ void AtomVecDemsiKokkos::unpack_border_vel_kokkos(
   if(space==Host) {
     struct AtomVecDemsiKokkos_UnpackBorderVel<LMPHostType> f(buf.view<LMPHostType>(),
       h_x,h_tag,h_type,h_mask,
-      h_orientation,
-      h_momentOfInertia,
       h_radius,
       h_rmass,
       h_forcing,
@@ -2911,6 +2876,7 @@ void AtomVecDemsiKokkos::unpack_border_vel_kokkos(
       h_coriolis,
       h_ocean_vel,
       h_bvector,
+      h_vn, // adding vn
       h_v,
       h_omega,
       first);
@@ -2918,8 +2884,6 @@ void AtomVecDemsiKokkos::unpack_border_vel_kokkos(
   } else {
     struct AtomVecDemsiKokkos_UnpackBorderVel<LMPDeviceType> f(buf.view<LMPDeviceType>(),
       d_x,d_tag,d_type,d_mask,
-      d_orientation,
-      d_momentOfInertia,
       d_radius,
       d_rmass,
       d_forcing,
@@ -2934,6 +2898,7 @@ void AtomVecDemsiKokkos::unpack_border_vel_kokkos(
       d_coriolis,
       d_ocean_vel,
       d_bvector,
+      d_vn, // adding vn
       d_v,
       d_omega,
       first);
@@ -2959,8 +2924,6 @@ void AtomVecDemsiKokkos::unpack_border_vel(int n, int first, double *buf)
     h_tag(i) = (tagint) ubuf(buf[m++]).i;
     h_type(i) = (int) ubuf(buf[m++]).i;
     h_mask(i) = (int) ubuf(buf[m++]).i;
-    h_orientation(i) = buf[m++];
-    h_momentOfInertia(i) = buf[m++];
     h_radius(i) = buf[m++];
     h_rmass(i) = buf[m++];
     h_forcing(i,0) = buf[m++];
@@ -2978,6 +2941,9 @@ void AtomVecDemsiKokkos::unpack_border_vel(int n, int first, double *buf)
     h_ocean_vel(i,1) = buf[m++];
     h_bvector(i,0) = buf[m++];
     h_bvector(i,1) = buf[m++];
+    h_vn(i,0) = buf[m++];
+    h_vn(i,1) = buf[m++]; // adding vn
+    h_vn(i,2) = buf[m++];
     h_v(i,0) = buf[m++];
     h_v(i,1) = buf[m++];
     h_v(i,2) = buf[m++];
@@ -3024,8 +2990,6 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
   typename AT::t_int_1d_randomread _type;
   typename AT::t_int_1d_randomread _mask;
   typename AT::t_imageint_1d_randomread _image;
-  typename AT::t_float_1d_randomread _orientation;
-  typename AT::t_float_1d_randomread _momentOfInertia;
   typename AT::t_float_1d_randomread _radius;
   typename AT::t_float_1d_randomread _rmass;
   typename AT::t_v_array_randomread _omega;
@@ -3041,6 +3005,7 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
   typename AT::t_float_1d_randomread _coriolis;
   typename AT::t_float_2d_randomread _ocean_vel;
   typename AT::t_float_2d_randomread _bvector;
+  typename AT::t_v_array_randomread _vn; // adding vn
   typename AT::t_int_1d_randomread _num_bond;
   typename AT::t_int_2d_randomread _bond_type;
   typename AT::t_tagint_2d_randomread _bond_atom;
@@ -3052,8 +3017,6 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
   typename AT::t_int_1d _typew;
   typename AT::t_int_1d _maskw;
   typename AT::t_imageint_1d _imagew;
-  typename AT::t_float_1d _orientationw;
-  typename AT::t_float_1d _momentOfInertiaw;
   typename AT::t_float_1d _radiusw;
   typename AT::t_float_1d _rmassw;
   typename AT::t_v_array _omegaw;
@@ -3069,6 +3032,7 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
   typename AT::t_float_1d _coriolisw;
   typename AT::t_float_2d _ocean_velw;
   typename AT::t_float_2d _bvectorw;
+  typename AT::t_v_array _vnw; // adding vn
   typename AT::t_int_1d _num_bondw;
   typename AT::t_int_2d _bond_typew;
   typename AT::t_tagint_2d _bond_atomw;
@@ -3092,8 +3056,6 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
     _type(atom->k_type.view<DeviceType>()),
     _mask(atom->k_mask.view<DeviceType>()),
     _image(atom->k_image.view<DeviceType>()),
-    _orientation(atom->k_orientation.view<DeviceType>()),
-    _momentOfInertia(atom->k_momentOfInertia.view<DeviceType>()),
     _radius(atom->k_radius.view<DeviceType>()),
     _rmass(atom->k_rmass.view<DeviceType>()),
     _omega(atom->k_omega.view<DeviceType>()),
@@ -3109,20 +3071,18 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
     _coriolis(atom->k_coriolis.view<DeviceType>()),
     _ocean_vel(atom->k_ocean_vel.view<DeviceType>()),
     _bvector(atom->k_bvector.view<DeviceType>()),
+    _vn(atom->k_vn.view<DeviceType>()), // adding vn
     _num_bond(atom->k_num_bond.view<DeviceType>()),
     _bond_type(atom->k_bond_type.view<DeviceType>()),
     _bond_atom(atom->k_bond_atom.view<DeviceType>()),
     _nspecial(atom->k_nspecial.view<DeviceType>()),
     _special(atom->k_special.view<DeviceType>()),
-
     _xw(atom->k_x.view<DeviceType>()),
     _vw(atom->k_v.view<DeviceType>()),
     _tagw(atom->k_tag.view<DeviceType>()),
     _typew(atom->k_type.view<DeviceType>()),
     _maskw(atom->k_mask.view<DeviceType>()),
     _imagew(atom->k_image.view<DeviceType>()),
-    _orientationw(atom->k_orientation.view<DeviceType>()),
-    _momentOfInertiaw(atom->k_momentOfInertia.view<DeviceType>()),
     _radiusw(atom->k_radius.view<DeviceType>()),
     _rmassw(atom->k_rmass.view<DeviceType>()),
     _omegaw(atom->k_omega.view<DeviceType>()),
@@ -3138,6 +3098,7 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
     _coriolisw(atom->k_coriolis.view<DeviceType>()),
     _ocean_velw(atom->k_ocean_vel.view<DeviceType>()),
     _bvectorw(atom->k_bvector.view<DeviceType>()),
+    _vnw(atom->k_vn.view<DeviceType>()), // adding vn
     _num_bondw(atom->k_num_bond.view<DeviceType>()),
     _bond_typew(atom->k_bond_type.view<DeviceType>()),
     _bond_atomw(atom->k_bond_atom.view<DeviceType>()),
@@ -3167,8 +3128,6 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
     _buf(mysend,m++) = d_ubuf(_type(i)).d;
     _buf(mysend,m++) = d_ubuf(_mask(i)).d;
     _buf(mysend,m++) = d_ubuf(_image(i)).d;
-    _buf(mysend,m++) = _orientation(i);
-    _buf(mysend,m++) = _momentOfInertia(i);
     _buf(mysend,m++) = _radius(i);
     _buf(mysend,m++) = _rmass(i);
     _buf(mysend,m++) = _omega(i,0);
@@ -3189,6 +3148,9 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
     _buf(mysend,m++) = _ocean_vel(i,1);
     _buf(mysend,m++) = _bvector(i,0);
     _buf(mysend,m++) = _bvector(i,1);
+    _buf(mysend,m++) = _vn(i,0);
+    _buf(mysend,m++) = _vn(i,1); // adding vn
+    _buf(mysend,m++) = _vn(i,2);
     _buf(mysend,m++) = d_ubuf(_num_bond(i)).d;
     for (int k = 0; k < _num_bond(i); k++) {
       _buf(mysend,m++) = d_ubuf(_bond_type(i,k)).d;
@@ -3213,8 +3175,6 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
       _typew(i) = _type(j);
       _maskw(i) = _mask(j);
       _imagew(i) = _image(j);
-      _orientationw(i) = _orientation(j);
-      _momentOfInertiaw(i) = _momentOfInertia(j);
       _radiusw(i) = _radius(j);
       _rmassw(i) = _rmass(j);
       _omegaw(i,0) = _omega(j,0);
@@ -3235,6 +3195,9 @@ struct AtomVecDemsiKokkos_PackExchangeFunctor {
       _ocean_velw(i,1) = _ocean_vel(j,1);
       _bvectorw(i,0) = _bvector(j,0);
       _bvectorw(i,1) = _bvector(j,1);
+      _vnw(i,0) = _vn(j,0);
+      _vnw(i,1) = _vn(j,1); // adding vn
+      _vnw(i,2) = _vn(j,2);
       _num_bondw(i) = _num_bond(j);
       for (int k = 0; k < _num_bond(j); k++) {
         _bond_typew(i,k) = _bond_type(j,k);
@@ -3305,8 +3268,6 @@ int AtomVecDemsiKokkos::pack_exchange(int i, double *buf)
   buf[m++] = ubuf(h_mask(i)).d;
   buf[m++] = ubuf(h_image(i)).d;
 
-  buf[m++] = h_orientation(i);
-  buf[m++] = h_momentOfInertia(i);
   buf[m++] = h_radius(i);
   buf[m++] = h_rmass(i);
   buf[m++] = h_omega(i,0);
@@ -3328,7 +3289,10 @@ int AtomVecDemsiKokkos::pack_exchange(int i, double *buf)
   buf[m++] = h_ocean_vel(i,1);
   buf[m++] = h_bvector(i,0);
   buf[m++] = h_bvector(i,1);
-
+  buf[m++] = h_vn(i,0);
+  buf[m++] = h_vn(i,1); // adding vn
+  buf[m++] = h_vn(i,2);
+  
   buf[m++] = ubuf(h_num_bond(i)).d;
   for (int k = 0; k < h_num_bond(i); k++) {
     buf[m++] = ubuf(h_bond_type(i,k)).d;
@@ -3361,8 +3325,6 @@ struct AtomVecDemsiKokkos_UnpackExchangeFunctor {
   typename AT::t_int_1d _type;
   typename AT::t_int_1d _mask;
   typename AT::t_imageint_1d _image;
-  typename AT::t_float_1d _orientation;
-  typename AT::t_float_1d _momentOfInertia;
   typename AT::t_float_1d _radius;
   typename AT::t_float_1d _rmass;
   typename AT::t_v_array _omega;
@@ -3378,6 +3340,7 @@ struct AtomVecDemsiKokkos_UnpackExchangeFunctor {
   typename AT::t_float_1d _coriolis;
   typename AT::t_float_2d _ocean_vel;
   typename AT::t_float_2d _bvector;
+  typename AT::t_v_array _vn; // adding vn
   typename AT::t_int_1d _num_bond;
   typename AT::t_int_2d _bond_type;
   typename AT::t_tagint_2d _bond_atom;
@@ -3401,8 +3364,6 @@ struct AtomVecDemsiKokkos_UnpackExchangeFunctor {
     _type(atom->k_type.view<DeviceType>()),
     _mask(atom->k_mask.view<DeviceType>()),
     _image(atom->k_image.view<DeviceType>()),
-    _orientation(atom->k_orientation.view<DeviceType>()),
-    _momentOfInertia(atom->k_momentOfInertia.view<DeviceType>()),
     _radius(atom->k_radius.view<DeviceType>()),
     _rmass(atom->k_rmass.view<DeviceType>()),
     _omega(atom->k_omega.view<DeviceType>()),
@@ -3418,6 +3379,7 @@ struct AtomVecDemsiKokkos_UnpackExchangeFunctor {
     _coriolis(atom->k_coriolis.view<DeviceType>()),
     _ocean_vel(atom->k_ocean_vel.view<DeviceType>()),
     _bvector(atom->k_bvector.view<DeviceType>()),
+    _vn(atom->k_vn.view<DeviceType>()), // adding vn
     _num_bond(atom->k_num_bond.view<DeviceType>()),
     _bond_type(atom->k_bond_type.view<DeviceType>()),
     _bond_atom(atom->k_bond_atom.view<DeviceType>()),
@@ -3447,8 +3409,6 @@ struct AtomVecDemsiKokkos_UnpackExchangeFunctor {
       _type(i) = (int) d_ubuf(_buf(myrecv,m++)).i;
       _mask(i) = (int) d_ubuf(_buf(myrecv,m++)).i;
       _image(i) = (imageint) d_ubuf(_buf(myrecv,m++)).i;
-      _orientation(i) = _buf(myrecv,m++);
-      _momentOfInertia(i) = _buf(myrecv,m++);
       _radius(i) = _buf(myrecv,m++);
       _rmass(i) = _buf(myrecv,m++);
       _omega(i,0) = _buf(myrecv,m++);
@@ -3469,6 +3429,9 @@ struct AtomVecDemsiKokkos_UnpackExchangeFunctor {
       _ocean_vel(i,1) = _buf(myrecv,m++);
       _bvector(i,0) = _buf(myrecv,m++);
       _bvector(i,1) = _buf(myrecv,m++);
+      _vn(i,0) = _buf(myrecv,m++);
+      _vn(i,1) = _buf(myrecv,m++); // adding vn
+      _vn(i,2) = _buf(myrecv,m++);
       _num_bond(i) = (int) d_ubuf(_buf(myrecv,m++)).i;
       int k;
       for (k = 0; k < _num_bond(i); k++) {
@@ -3537,8 +3500,6 @@ int AtomVecDemsiKokkos::unpack_exchange(double *buf)
   h_mask(nlocal) = (int) ubuf(buf[m++]).i;
   h_image(nlocal) = (imageint) ubuf(buf[m++]).i;
 
-  h_orientation(nlocal) = buf[m++];
-  h_momentOfInertia(nlocal) = buf[m++];
   h_radius(nlocal) = buf[m++];
   h_rmass(nlocal) = buf[m++];
   h_omega(nlocal,0) = buf[m++];
@@ -3560,6 +3521,9 @@ int AtomVecDemsiKokkos::unpack_exchange(double *buf)
   h_ocean_vel(nlocal,1) = buf[m++];
   h_bvector(nlocal,0) = buf[m++];
   h_bvector(nlocal,1) = buf[m++];
+  h_vn(nlocal,0) = buf[m++];
+  h_vn(nlocal,1) = buf[m++]; // adding vn
+  h_vn(nlocal,2) = buf[m++];
 
   h_num_bond(nlocal) = (int) ubuf(buf[m++]).i;
   for (int k = 0; k < h_num_bond(nlocal); k++) {
@@ -3599,7 +3563,7 @@ int AtomVecDemsiKokkos::size_restart()
   int nlocal = atom->nlocal;
   int n = 0;
   for (int i = 0; i < nlocal; i++)
-     n += 34 + 2*num_bond[i];
+     n += 32 + 2*num_bond[i];
 
   if (atom->nextra_restart)
     for (int iextra = 0; iextra < atom->nextra_restart; iextra++)
@@ -3634,8 +3598,6 @@ int AtomVecDemsiKokkos::pack_restart(int i, double *buf)
   buf[m++] = h_v(i,1);
   buf[m++] = h_v(i,2);
 
-  buf[m++] = h_orientation(i);
-  buf[m++] = h_momentOfInertia(i);
   buf[m++] = h_radius(i);
   buf[m++] = h_rmass(i);
   buf[m++] = h_omega(i,0);
@@ -3657,6 +3619,9 @@ int AtomVecDemsiKokkos::pack_restart(int i, double *buf)
   buf[m++] = h_ocean_vel(i,1);
   buf[m++] = h_bvector(i,0);
   buf[m++] = h_bvector(i,1);
+  buf[m++] = h_vn(i,0);
+  buf[m++] = h_vn(i,1); // adding vn
+  buf[m++] = h_vn(i,2);
 
   buf[m++] = ubuf(h_num_bond(i)).d;
   for (int k = 0; k < h_num_bond(i); k++) {
@@ -3703,8 +3668,6 @@ int AtomVecDemsiKokkos::unpack_restart(double *buf)
   h_v(nlocal,1) = buf[m++];
   h_v(nlocal,2) = buf[m++];
 
-  h_orientation(nlocal) = buf[m++];
-  h_momentOfInertia(nlocal) = buf[m++];
   h_radius(nlocal) = buf[m++];
   h_rmass(nlocal) = buf[m++];
   h_omega(nlocal,0) = buf[m++];
@@ -3726,6 +3689,9 @@ int AtomVecDemsiKokkos::unpack_restart(double *buf)
   h_ocean_vel(nlocal,1) = buf[m++];
   h_bvector(nlocal,0) = buf[m++];
   h_bvector(nlocal,1) = buf[m++];
+  h_vn(nlocal,0) = buf[m++];
+  h_vn(nlocal,1) = buf[m++]; // adding vn
+  h_vn(nlocal,2) = buf[m++];
 
   h_num_bond(nlocal) = (int) ubuf(buf[m++]).i;
   for (int k = 0; k < h_num_bond(nlocal); k++) {
@@ -3771,8 +3737,6 @@ void AtomVecDemsiKokkos::create_atom(int itype, double *coord)
   h_v(nlocal,1) = 0.0;
   h_v(nlocal,2) = 0.0;
 
-  h_orientation(nlocal) = 0.0;
-  h_momentOfInertia(nlocal) = 0.5*0.5*0.5;
   h_radius(nlocal) = 0.5;
   h_rmass(nlocal) = MY_PI*h_radius(nlocal)*h_radius(nlocal);
   h_omega(nlocal,0) = 0.0;
@@ -3794,6 +3758,9 @@ void AtomVecDemsiKokkos::create_atom(int itype, double *coord)
   h_ocean_vel(nlocal,1) = 0.0;
   h_bvector(nlocal,0) = 0.0;
   h_bvector(nlocal,1) = 0.0;
+  h_vn(nlocal,0) = 0.0;
+  h_vn(nlocal,1) = 0.0; // adding vn
+  h_vn(nlocal,2) = 0.0;
 
   h_num_bond[nlocal] = 0;
   h_nspecial(nlocal,0) = h_nspecial(nlocal,1) = h_nspecial(nlocal,2) = 0;
@@ -4037,9 +4004,9 @@ int AtomVecDemsiKokkos::write_vel_hybrid(FILE *fp, double *buf)
    return # of bytes of allocated memory
 ------------------------------------------------------------------------- */
 
-double AtomVecDemsiKokkos::memory_usage()
+bigint AtomVecDemsiKokkos::memory_usage()
 {
-  double bytes = 0;
+  bigint bytes = 0;
 
   if (atom->memcheck("tag")) bytes += memory->usage(tag,nmax);
   if (atom->memcheck("type")) bytes += memory->usage(type,nmax);
@@ -4049,8 +4016,6 @@ double AtomVecDemsiKokkos::memory_usage()
   if (atom->memcheck("v")) bytes += memory->usage(v,nmax,3);
   if (atom->memcheck("f")) bytes += memory->usage(f,nmax*comm->nthreads,3);
 
-  if (atom->memcheck("orientation")) bytes += memory->usage(orientation,nmax);
-  if (atom->memcheck("momentOfInertia")) bytes += memory->usage(momentOfInertia,nmax);
   if (atom->memcheck("radius")) bytes += memory->usage(radius,nmax);
   if (atom->memcheck("rmass")) bytes += memory->usage(rmass,nmax);
   if (atom->memcheck("omega")) bytes += memory->usage(omega,nmax,3);
@@ -4069,6 +4034,7 @@ double AtomVecDemsiKokkos::memory_usage()
   if (atom->memcheck("coriolis")) bytes += memory->usage(coriolis,nmax);
   if (atom->memcheck("ocean_vel")) bytes += memory->usage(ocean_vel,nmax,2);
   if (atom->memcheck("bvector")) bytes += memory->usage(bvector,nmax,2);
+  if (atom->memcheck("vn")) bytes += memory->usage(vn,nmax,3); // adding vn
 
   if (atom->memcheck("num_bond")) bytes += memory->usage(num_bond,nmax);
   if (atom->memcheck("bond_type"))
@@ -4101,8 +4067,6 @@ void AtomVecDemsiKokkos::sync(ExecutionSpace space, unsigned int mask)
     if (mask & TORQUE_MASK) atomKK->k_torque.sync<LMPDeviceType>();
     if (mask & FORCING_MASK) atomKK->k_forcing.sync<LMPDeviceType>();
     if (mask & THICKNESS_MASK) {
-        atomKK->k_orientation.sync<LMPDeviceType>();
-        atomKK->k_momentOfInertia.sync<LMPDeviceType>();
         atomKK->k_mean_thickness.sync<LMPDeviceType>();
         atomKK->k_min_thickness.sync<LMPDeviceType>();
         atomKK->k_ridgingIceThickness.sync<LMPDeviceType>();
@@ -4114,6 +4078,7 @@ void AtomVecDemsiKokkos::sync(ExecutionSpace space, unsigned int mask)
         atomKK->k_coriolis.sync<LMPDeviceType>();
         atomKK->k_ocean_vel.sync<LMPDeviceType>();
         atomKK->k_bvector.sync<LMPDeviceType>();
+        atomKK->k_vn.sync<LMPDeviceType>(); // adding vn
     }
     if (mask & BOND_MASK) {
         atomKK->k_num_bond.sync<LMPDeviceType>();
@@ -4138,8 +4103,6 @@ void AtomVecDemsiKokkos::sync(ExecutionSpace space, unsigned int mask)
     if (mask & TORQUE_MASK) atomKK->k_torque.sync<LMPHostType>();
     if (mask & FORCING_MASK) atomKK->k_forcing.sync<LMPHostType>();
     if (mask & THICKNESS_MASK) {
-        atomKK->k_orientation.sync<LMPHostType>();
-        atomKK->k_momentOfInertia.sync<LMPHostType>();
         atomKK->k_mean_thickness.sync<LMPHostType>();
         atomKK->k_min_thickness.sync<LMPHostType>();
         atomKK->k_ridgingIceThickness.sync<LMPHostType>();
@@ -4151,6 +4114,7 @@ void AtomVecDemsiKokkos::sync(ExecutionSpace space, unsigned int mask)
         atomKK->k_coriolis.sync<LMPHostType>();
         atomKK->k_ocean_vel.sync<LMPHostType>();
         atomKK->k_bvector.sync<LMPHostType>();
+        atomKK->k_vn.sync<LMPHostType>(); // adding vn
     }
     if (mask & BOND_MASK) {
         atomKK->k_num_bond.sync<LMPHostType>();
@@ -4194,10 +4158,6 @@ void AtomVecDemsiKokkos::sync_overlapping_device(ExecutionSpace space, unsigned 
     if ((mask & FORCING_MASK) && atomKK->k_forcing.need_sync<LMPDeviceType>())
       perform_async_copy<DAT::tdual_float_2d>(atomKK->k_forcing,space);
     if (mask & THICKNESS_MASK) {
-        if (atomKK->k_orientation.need_sync<LMPDeviceType>())
-           perform_async_copy<DAT::tdual_float_1d>(atomKK->k_orientation,space);
-        if (atomKK->k_momentOfInertia.need_sync<LMPDeviceType>())
-           perform_async_copy<DAT::tdual_float_1d>(atomKK->k_momentOfInertia,space);
         if (atomKK->k_mean_thickness.need_sync<LMPDeviceType>())
            perform_async_copy<DAT::tdual_float_1d>(atomKK->k_mean_thickness,space);
         if (atomKK->k_min_thickness.need_sync<LMPDeviceType>())
@@ -4220,6 +4180,8 @@ void AtomVecDemsiKokkos::sync_overlapping_device(ExecutionSpace space, unsigned 
            perform_async_copy<DAT::tdual_float_2d>(atomKK->k_ocean_vel,space);
         if (atomKK->k_bvector.need_sync<LMPDeviceType>())
            perform_async_copy<DAT::tdual_float_2d>(atomKK->k_bvector,space);
+        if (atomKK->k_vn.need_sync<LMPDeviceType>())
+           perform_async_copy<DAT::tdual_v_array>(atomKK->k_vn,space); // adding vn
     }
     if (mask & SPECIAL_MASK) {
       if (atomKK->k_nspecial.need_sync<LMPDeviceType>())
@@ -4261,10 +4223,6 @@ void AtomVecDemsiKokkos::sync_overlapping_device(ExecutionSpace space, unsigned 
     if ((mask & FORCING_MASK) && atomKK->k_forcing.need_sync<LMPHostType>())
       perform_async_copy<DAT::tdual_float_2d>(atomKK->k_forcing,space);
     if (mask & THICKNESS_MASK) {
-        if (atomKK->k_orientation.need_sync<LMPHostType>())
-           perform_async_copy<DAT::tdual_float_1d>(atomKK->k_orientation,space);
-        if (atomKK->k_momentOfInertia.need_sync<LMPHostType>())
-           perform_async_copy<DAT::tdual_float_1d>(atomKK->k_momentOfInertia,space);
         if (atomKK->k_mean_thickness.need_sync<LMPHostType>())
            perform_async_copy<DAT::tdual_float_1d>(atomKK->k_mean_thickness,space);
         if (atomKK->k_min_thickness.need_sync<LMPHostType>())
@@ -4287,6 +4245,8 @@ void AtomVecDemsiKokkos::sync_overlapping_device(ExecutionSpace space, unsigned 
            perform_async_copy<DAT::tdual_float_2d>(atomKK->k_ocean_vel,space);
         if (atomKK->k_bvector.need_sync<LMPHostType>())
            perform_async_copy<DAT::tdual_float_2d>(atomKK->k_bvector,space);
+        if (atomKK->k_vn.need_sync<LMPHostType>())
+           perform_async_copy<DAT::tdual_v_array>(atomKK->k_vn,space); // adding vn
     }
     if (mask & SPECIAL_MASK) {
       if (atomKK->k_nspecial.need_sync<LMPHostType>())
@@ -4323,8 +4283,6 @@ void AtomVecDemsiKokkos::modified(ExecutionSpace space, unsigned int mask)
     if (mask & TORQUE_MASK) atomKK->k_torque.modify<LMPDeviceType>();
     if (mask & FORCING_MASK) atomKK->k_forcing.modify<LMPDeviceType>();
     if (mask & THICKNESS_MASK) {
-        atomKK->k_orientation.modify<LMPDeviceType>();
-        atomKK->k_momentOfInertia.modify<LMPDeviceType>();
         atomKK->k_mean_thickness.modify<LMPDeviceType>();
         atomKK->k_min_thickness.modify<LMPDeviceType>();
         atomKK->k_ridgingIceThickness.modify<LMPDeviceType>();
@@ -4336,6 +4294,7 @@ void AtomVecDemsiKokkos::modified(ExecutionSpace space, unsigned int mask)
         atomKK->k_coriolis.modify<LMPDeviceType>();
         atomKK->k_ocean_vel.modify<LMPDeviceType>();
         atomKK->k_bvector.modify<LMPDeviceType>();
+        atomKK->k_vn.modify<LMPDeviceType>(); // adding vn
     }
     if (mask & BOND_MASK) {
         atomKK->k_num_bond.modify<LMPDeviceType>();
@@ -4360,8 +4319,6 @@ void AtomVecDemsiKokkos::modified(ExecutionSpace space, unsigned int mask)
     if (mask & TORQUE_MASK) atomKK->k_torque.modify<LMPHostType>();
     if (mask & FORCING_MASK) atomKK->k_forcing.modify<LMPHostType>();
     if (mask & THICKNESS_MASK) {
-        atomKK->k_orientation.modify<LMPHostType>();
-        atomKK->k_momentOfInertia.modify<LMPHostType>();
         atomKK->k_mean_thickness.modify<LMPHostType>();
         atomKK->k_min_thickness.modify<LMPHostType>();
         atomKK->k_ridgingIceThickness.modify<LMPHostType>();
@@ -4373,6 +4330,7 @@ void AtomVecDemsiKokkos::modified(ExecutionSpace space, unsigned int mask)
         atomKK->k_coriolis.modify<LMPHostType>();
         atomKK->k_ocean_vel.modify<LMPHostType>();
         atomKK->k_bvector.modify<LMPHostType>();
+        atomKK->k_vn.modify<LMPHostType>(); // adding vn
     }
     if (mask & BOND_MASK) {
         atomKK->k_num_bond.modify<LMPHostType>();

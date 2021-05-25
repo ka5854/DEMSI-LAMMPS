@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -15,24 +15,16 @@
 #define LMP_ATOM_H
 
 #include "pointers.h"
-
 #include <map>
-#include <set>
+#include <string>
 
 namespace LAMMPS_NS {
-
-  // forward declaration
-
-  class AtomVec;
 
 class Atom : protected Pointers {
  public:
   char *atom_style;
-  AtomVec *avec;
+  class AtomVec *avec;
   enum{DOUBLE,INT,BIGINT};
-  enum{GROW=0,RESTART=1,BORDER=2};
-  enum{ATOMIC=0,MOLECULAR=1,TEMPLATE=2};
-  enum{MAP_NONE=0,MAP_ARRAY=1,MAP_HASH=2,MAP_YES=3};
 
   // atom counts
 
@@ -58,7 +50,7 @@ class Atom : protected Pointers {
 
   int firstgroup;               // store atoms in this group first, -1 if unset
   int nfirst;                   // # of atoms in first group on this proc
-  char *firstgroupname;         // group-ID to store first, null pointer if unset
+  char *firstgroupname;         // group-ID to store first, NULL if unset
 
   // --------------------------------------------------------------------
   // 1st customization section: customize by adding new per-atom variable
@@ -67,7 +59,7 @@ class Atom : protected Pointers {
   tagint *tag;
   int *type,*mask;
   imageint *image;
-  double **x,**v,**f;
+  double **x,**v,**f,**vn; // adding vn
 
   // charged and dipolar particles
 
@@ -137,6 +129,20 @@ class Atom : protected Pointers {
   double *edpd_cv;               // heat capacity
   int cc_species;
 
+  // USER-DEMSI package
+  double **forcing;
+  double *mean_thickness;
+  double *min_thickness;
+  double *ridgingIceThickness;
+  double *ridgingIceThicknessWeight;
+  double *netToGrossClosingRatio;
+  double *changeEffectiveElementArea;
+  double *ice_area;
+  double *iceConcentration;
+  double *coriolis;
+  double **ocean_vel;
+  double **bvector;
+
   // USER-MESONT package
 
   double *length;
@@ -156,22 +162,6 @@ class Atom : protected Pointers {
 
   double *rho,*drho,*esph,*desph,*cv;
   double **vest;
-
-  //USER-DEMSI package
-  double **forcing;
-  double *orientation;
-  double *momentOfInertia;
-  double *mean_thickness;
-  double *min_thickness;
-  double *ridgingIceThickness;
-  double *ridgingIceThicknessWeight;
-  double *netToGrossClosingRatio;
-  double *changeEffectiveElementArea;
-  double *ice_area;
-  double *iceConcentration;
-  double *coriolis;
-  double **ocean_vel;
-  double **bvector;
 
   // end of customization section
   // --------------------------------------------------------------------
@@ -268,7 +258,6 @@ class Atom : protected Pointers {
   int map_user;                   // user requested map style:
                                   // 0 = no request, 1=array, 2=hash, 3=yes
   tagint map_tag_max;             // max atom ID that map() is setup for
-  std::set<tagint> *unique_tags;  // set to ensure that bodies have unique tags
 
   // spatial sorting of atoms
 
@@ -299,12 +288,12 @@ class Atom : protected Pointers {
   void add_peratom_vary(const char *, void *, int, int *,
                         void *, int collength=0);
   void create_avec(const std::string &, int, char **, int);
-  virtual AtomVec *new_avec(const std::string &, int, int &);
+  virtual class AtomVec *new_avec(const std::string &, int, int &);
 
   void init();
   void setup();
 
-  AtomVec *style_match(const char *);
+  class AtomVec *style_match(const char *);
   void modify_params(int, char **);
   void tag_check();
   void tag_extend();
@@ -322,8 +311,8 @@ class Atom : protected Pointers {
   void data_angles(int, char *, int *, tagint, int);
   void data_dihedrals(int, char *, int *, tagint, int);
   void data_impropers(int, char *, int *, tagint, int);
-  void data_bonus(int, char *, AtomVec *, tagint);
-  void data_bodies(int, char *, AtomVec *, tagint);
+  void data_bonus(int, char *, class AtomVec *, tagint);
+  void data_bodies(int, char *, class AtomVec *, tagint);
   void data_fix_compute_variable(int, int);
 
   virtual void allocate_type_arrays();
@@ -354,7 +343,6 @@ class Atom : protected Pointers {
   virtual void sync_modify(ExecutionSpace, unsigned int, unsigned int) {}
 
   void *extract(const char *);
-  int extract_datatype(const char *);
 
   inline int* get_map_array() {return map_array;};
   inline int get_map_size() {return map_tag_max+1;};
@@ -364,7 +352,7 @@ class Atom : protected Pointers {
   // NOTE: placeholder method until KOKKOS/AtomVec is refactored
   int memcheck(const char *) {return 1;}
 
-  double memory_usage();
+  bigint memory_usage();
 
   // functions for global to local ID mapping
   // map lookup function inlined for efficiency
