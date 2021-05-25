@@ -59,7 +59,7 @@ class Atom : protected Pointers {
   tagint *tag;
   int *type,*mask;
   imageint *image;
-  double **x,**v,**f;
+  double **x,**v,**f,**vn; // adding vn
 
   // charged and dipolar particles
 

@@ -76,6 +76,7 @@ class AtomVecDemsi : public AtomVec {
   double **x;
   double **v;
   double **f;
+  double **vn; // adding vn
   double *radius;
   double *rmass;
   double *orientation;

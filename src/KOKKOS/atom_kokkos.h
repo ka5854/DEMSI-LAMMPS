@@ -27,7 +27,9 @@ class AtomKokkos : public Atom {
   DAT::tdual_x_array k_x;
   DAT::tdual_v_array k_v;
   DAT::tdual_f_array k_f;
-
+  
+  DAT::tdual_v_array k_vn; // adding vn
+  
   DAT::tdual_float_1d k_mass;
 
   DAT::tdual_float_1d k_q;
