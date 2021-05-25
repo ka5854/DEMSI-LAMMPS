@@ -79,8 +79,6 @@ void FixNVESphereDemsi::init()
 
 void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
 {
-  double dtfm;
-
   double **x = atom->x;
   double **v = atom->v;
   double **f = atom->f;
@@ -194,8 +192,7 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
 
 void FixNVESphereDemsi::final_integrate()
 {
-  double dtfm,dtirotate;
-
+  double **x = atom->v;
   double **v = atom->v;
   double **f = atom->f;
   double **omega = atom->omega;
@@ -224,7 +221,7 @@ void FixNVESphereDemsi::final_integrate()
 
   double dtv = update->dt;
   double dtf = 0.5 * update->dt;
-  double dtirotate;
+  double dtirotate, dtfrotate;
 
   // update v,omega for all particles
   // d_omega/dt = torque / inertia
