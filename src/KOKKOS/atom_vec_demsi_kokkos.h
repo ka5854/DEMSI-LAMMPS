@@ -70,7 +70,7 @@ class AtomVecDemsiKokkos : public AtomVecKokkos {
   int pack_vel_hybrid(int, double *);
   void write_vel(FILE *, int, double **);
   int write_vel_hybrid(FILE *, double *);
-  double memory_usage();
+  bigint memory_usage();
 
   int pack_comm_kokkos(const int &n, const DAT::tdual_int_2d &k_sendlist,
                        const int & iswap,
@@ -138,6 +138,7 @@ class AtomVecDemsiKokkos : public AtomVecKokkos {
   double *coriolis;
   double **ocean_vel;
   double **bvector;
+  double **vn; // adding vn
   int radvary;
 
   int **nspecial;
@@ -193,6 +194,8 @@ class AtomVecDemsiKokkos : public AtomVecKokkos {
   HAT::t_float_2d h_ocean_vel;
   DAT::t_float_2d d_bvector;
   HAT::t_float_2d h_bvector;
+  DAT::t_v_array d_vn; // adding vn
+  HAT::t_v_array h_vn; // adding vn
 
   DAT::t_int_2d d_nspecial;
   HAT::t_int_2d h_nspecial;

@@ -1,6 +1,6 @@
 /* -*- c++ -*- ----------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -36,6 +36,9 @@ class FixNVESphereDemsi : public FixNVE {
   // if they are location/temperature dependent, they would have
   // to be made into per-particle properties)
   double ocean_drag, ocean_density;
+  
+  // control flag, sent to fix_integrator in demsi_external_force.cpp
+  int timeIntegrationFlag;
 
  protected:
   double inertia;

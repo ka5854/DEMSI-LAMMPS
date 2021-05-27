@@ -1,6 +1,6 @@
 /* ----------------------------------------------------------------------
    LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
-   https://lammps.sandia.gov/, Sandia National Laboratories
+   http://lammps.sandia.gov, Sandia National Laboratories
    Steve Plimpton, sjplimp@sandia.gov
 
    Copyright (2003) Sandia Corporation.  Under the terms of Contract
@@ -12,22 +12,26 @@
 ------------------------------------------------------------------------- */
 
 #include "atom_vec.h"
-
+#include <cstdio>
+#include <cstring>
 #include "atom.h"
 #include "comm.h"
 #include "domain.h"
-#include "error.h"
-#include "fix.h"
 #include "force.h"
+#include "modify.h"
+#include "fix.h"
 #include "math_const.h"
 #include "memory.h"
-#include "modify.h"
+#include "error.h"
+#include "utils.h"
 #include "tokenizer.h"
-
-#include <cstring>
+#include "fmt/format.h"
 
 using namespace LAMMPS_NS;
 using namespace MathConst;
+
+#define DELTA 16384
+#define DELTA_BONUS 8192
 
 /* ---------------------------------------------------------------------- */
 
@@ -36,9 +40,9 @@ AtomVec::AtomVec(LAMMPS *lmp) : Pointers(lmp)
   nmax = 0;
   ngrow = 0;
 
-  molecular = Atom::ATOMIC;
+  molecular = 0;
   bonds_allow = angles_allow = dihedrals_allow = impropers_allow = 0;
-  mass_type = dipole_type = PER_ATOM;
+  mass_type = dipole_type = 0;
   forceclearflag = 0;
   maxexchange = 0;
   bonus_flag = 0;
@@ -59,18 +63,33 @@ AtomVec::AtomVec(LAMMPS *lmp) : Pointers(lmp)
   // peratom variables auto-included in corresponding child style fields string
   // these fields cannot be specified in the fields string
 
-  default_grow = "id type mask image x v f";
-  default_copy = "id type mask image x v";
-  default_comm = "x";
-  default_comm_vel = "x v";
-  default_reverse = "f";
-  default_border = "id type mask x";
-  default_border_vel = "id type mask x v";
-  default_exchange = "id type mask image x v";
-  default_restart = "id type mask image x v";
-  default_create = "id type mask image x v";
+  default_grow = "id type mask image x v f vn"; // adding vn to all of these
+  default_copy = "id type mask image x v vn";
+  default_comm = "x vn";
+  default_comm_vel = "x v vn";
+  default_reverse = "f vn";
+  default_border = "id type mask x vn";
+  default_border_vel = "id type mask x v vn";
+  default_exchange = "id type mask image x v vn";
+  default_restart = "id type mask image x v vn";
+  default_create = "id type mask image x v vn";
   default_data_atom = "";
   default_data_vel = "";
+
+  // initializations
+
+  init_method(&mgrow);
+  init_method(&mcopy);
+  init_method(&mcomm);
+  init_method(&mcomm_vel);
+  init_method(&mreverse);
+  init_method(&mborder);
+  init_method(&mborder_vel);
+  init_method(&mexchange);
+  init_method(&mrestart);
+  init_method(&mcreate);
+  init_method(&mdata_atom);
+  init_method(&mdata_vel);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -114,6 +133,19 @@ AtomVec::~AtomVec()
     }
   }
 
+  destroy_method(&mgrow);
+  destroy_method(&mcopy);
+  destroy_method(&mcomm);
+  destroy_method(&mcomm_vel);
+  destroy_method(&mreverse);
+  destroy_method(&mborder);
+  destroy_method(&mborder_vel);
+  destroy_method(&mexchange);
+  destroy_method(&mrestart);
+  destroy_method(&mcreate);
+  destroy_method(&mdata_atom);
+  destroy_method(&mdata_vel);
+
   delete [] threads;
 }
 
@@ -126,8 +158,11 @@ void AtomVec::store_args(int narg, char **arg)
   nargcopy = narg;
   if (nargcopy) argcopy = new char*[nargcopy];
   else argcopy = nullptr;
-  for (int i = 0; i < nargcopy; i++)
-    argcopy[i] = utils::strdup(arg[i]);
+  for (int i = 0; i < nargcopy; i++) {
+    int n = strlen(arg[i]) + 1;
+    argcopy[i] = new char[n];
+    strcpy(argcopy[i],arg[i]);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -154,8 +189,6 @@ void AtomVec::init()
     error->all(FLERR,"KOKKOS package requires a kokkos enabled atom_style");
 }
 
-static constexpr bigint DELTA=16384;
-
 /* ----------------------------------------------------------------------
    roundup N so it is a multiple of DELTA
    error if N exceeds 32-bit int, since will be used as arg to grow()
@@ -178,8 +211,6 @@ void AtomVec::grow_nmax()
   nmax = nmax/DELTA * DELTA;
   nmax += DELTA;
 }
-
-static constexpr bigint DELTA_BONUS=8192;
 
 /* ----------------------------------------------------------------------
    grow nmax_bonus so it is a multiple of DELTA_BONUS
@@ -216,6 +247,7 @@ void AtomVec::grow(int n)
   x = memory->grow(atom->x,nmax,3,"atom:x");
   v = memory->grow(atom->v,nmax,3,"atom:v");
   f = memory->grow(atom->f,nmax*comm->nthreads,3,"atom:f");
+  vn = memory->grow(atom->vn,nmax,3,"atom:vn");
 
   for (int i = 0; i < ngrow; i++) {
     pdata = mgrow.pdata[i];
@@ -274,6 +306,11 @@ void AtomVec::copy(int i, int j, int delflag)
   x[j][0] = x[i][0];
   x[j][1] = x[i][1];
   x[j][2] = x[i][2];
+  
+  vn[j][0] = x[i][0];
+  vn[j][1] = x[i][1]; // adding vn
+  vn[j][2] = x[i][2];
+  
   v[j][0] = v[i][0];
   v[j][1] = v[i][1];
   v[j][2] = v[i][2];
@@ -361,6 +398,11 @@ int AtomVec::pack_comm(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
     }
   } else {
     if (domain->triclinic == 0) {
@@ -377,6 +419,10 @@ int AtomVec::pack_comm(int n, int *list, double *buf,
       buf[m++] = x[j][0] + dx;
       buf[m++] = x[j][1] + dy;
       buf[m++] = x[j][2] + dz;
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
     }
   }
 
@@ -455,6 +501,11 @@ int AtomVec::pack_comm_vel(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
       buf[m++] = v[j][0];
       buf[m++] = v[j][1];
       buf[m++] = v[j][2];
@@ -475,6 +526,11 @@ int AtomVec::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = v[j][0];
         buf[m++] = v[j][1];
         buf[m++] = v[j][2];
@@ -488,6 +544,11 @@ int AtomVec::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         if (mask[i] & deform_groupbit) {
           buf[m++] = v[j][0] + dvx;
           buf[m++] = v[j][1] + dvy;
@@ -573,6 +634,10 @@ void AtomVec::unpack_comm(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    
+    vn[i][0] = buf[m++];
+    vn[i][1] = buf[m++]; // adding vn
+    vn[i][2] = buf[m++];
   }
 
   if (ncomm) {
@@ -633,6 +698,11 @@ void AtomVec::unpack_comm_vel(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    
+    vn[i][0] = buf[m++];
+    vn[i][1] = buf[m++]; // adding vn
+    vn[i][2] = buf[m++];
+    
     v[i][0] = buf[m++];
     v[i][1] = buf[m++];
     v[i][2] = buf[m++];
@@ -696,6 +766,10 @@ int AtomVec::pack_reverse(int n, int first, double *buf)
     buf[m++] = f[i][0];
     buf[m++] = f[i][1];
     buf[m++] = f[i][2];
+    
+    buf[m++] = vn[i][0];
+    buf[m++] = vn[i][1]; // adding vn
+    buf[m++] = vn[i][2];
   }
 
   if (nreverse) {
@@ -762,6 +836,10 @@ void AtomVec::unpack_reverse(int n, int *list, double *buf)
     f[j][0] += buf[m++];
     f[j][1] += buf[m++];
     f[j][2] += buf[m++];
+    
+    vn[j][0] += buf[m++];
+    vn[j][1] += buf[m++]; // adding vn
+    vn[j][2] += buf[m++];
   }
 
   if (nreverse) {
@@ -834,6 +912,11 @@ int AtomVec::pack_border(int n, int *list, double *buf, int pbc_flag, int *pbc)
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
       buf[m++] = ubuf(tag[j]).d;
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
@@ -853,6 +936,11 @@ int AtomVec::pack_border(int n, int *list, double *buf, int pbc_flag, int *pbc)
       buf[m++] = x[j][0] + dx;
       buf[m++] = x[j][1] + dy;
       buf[m++] = x[j][2] + dz;
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
       buf[m++] = ubuf(tag[j]).d;
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
@@ -938,6 +1026,11 @@ int AtomVec::pack_border_vel(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
       buf[m++] = ubuf(tag[j]).d;
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
@@ -961,6 +1054,11 @@ int AtomVec::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = ubuf(tag[j]).d;
         buf[m++] = ubuf(type[j]).d;
         buf[m++] = ubuf(mask[j]).d;
@@ -977,6 +1075,11 @@ int AtomVec::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = ubuf(tag[j]).d;
         buf[m++] = ubuf(type[j]).d;
         buf[m++] = ubuf(mask[j]).d;
@@ -1070,6 +1173,11 @@ void AtomVec::unpack_border(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    
+    vn[i][0] = buf[m++];
+    vn[i][1] = buf[m++]; // adding vn
+    vn[i][2] = buf[m++];
+    
     tag[i] = (tagint) ubuf(buf[m++]).i;
     type[i] = (int) ubuf(buf[m++]).i;
     mask[i] = (int) ubuf(buf[m++]).i;
@@ -1139,6 +1247,11 @@ void AtomVec::unpack_border_vel(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    
+    vn[i][0] = buf[m++];
+    vn[i][1] = buf[m++]; // adding vn
+    vn[i][2] = buf[m++];
+    
     tag[i] = (tagint) ubuf(buf[m++]).i;
     type[i] = (int) ubuf(buf[m++]).i;
     mask[i] = (int) ubuf(buf[m++]).i;
@@ -1211,6 +1324,11 @@ int AtomVec::pack_exchange(int i, double *buf)
   buf[m++] = x[i][0];
   buf[m++] = x[i][1];
   buf[m++] = x[i][2];
+  
+  buf[m++] = vn[i][0];
+  buf[m++] = vn[i][1]; // adding vn
+  buf[m++] = vn[i][2];
+  
   buf[m++] = v[i][0];
   buf[m++] = v[i][1];
   buf[m++] = v[i][2];
@@ -1303,6 +1421,11 @@ int AtomVec::unpack_exchange(double *buf)
   x[nlocal][0] = buf[m++];
   x[nlocal][1] = buf[m++];
   x[nlocal][2] = buf[m++];
+  
+  vn[nlocal][0] = buf[m++];
+  vn[nlocal][1] = buf[m++]; // adding vn
+  vn[nlocal][2] = buf[m++];
+  
   v[nlocal][0] = buf[m++];
   v[nlocal][1] = buf[m++];
   v[nlocal][2] = buf[m++];
@@ -1396,9 +1519,9 @@ int AtomVec::size_restart()
 
   int nlocal = atom->nlocal;
 
-  // 11 = length storage + id,type,mask,image,x,v
+  // 14 = length storage + id,type,mask,image,x,v,vn ! adding vn
 
-  int n = 11 * nlocal;
+  int n = 14 * nlocal; // adding vn
 
   if (nrestart) {
     for (nn = 0; nn < nrestart; nn++) {
@@ -1446,6 +1569,11 @@ int AtomVec::pack_restart(int i, double *buf)
   buf[m++] = x[i][0];
   buf[m++] = x[i][1];
   buf[m++] = x[i][2];
+  
+  buf[m++] = vn[i][0];
+  buf[m++] = vn[i][1]; // adding vn
+  buf[m++] = vn[i][2];
+  
   buf[m++] = ubuf(tag[i]).d;
   buf[m++] = ubuf(type[i]).d;
   buf[m++] = ubuf(mask[i]).d;
@@ -1547,6 +1675,11 @@ int AtomVec::unpack_restart(double *buf)
   x[nlocal][0] = buf[m++];
   x[nlocal][1] = buf[m++];
   x[nlocal][2] = buf[m++];
+  
+  vn[nlocal][0] = buf[m++];
+  vn[nlocal][1] = buf[m++]; // adding vn
+  vn[nlocal][2] = buf[m++];
+  
   tag[nlocal] = (tagint) ubuf(buf[m++]).i;
   type[nlocal] = (int) ubuf(buf[m++]).i;
   mask[nlocal] = (int) ubuf(buf[m++]).i;
@@ -1649,6 +1782,11 @@ void AtomVec::create_atom(int itype, double *coord)
   x[nlocal][0] = coord[0];
   x[nlocal][1] = coord[1];
   x[nlocal][2] = coord[2];
+  
+  vn[nlocal][0] = 0.0;
+  vn[nlocal][1] = 0.0; // adding vn
+  vn[nlocal][2] = 0.0;
+  
   mask[nlocal] = 1;
   image[nlocal] = ((imageint) IMGMAX << IMG2BITS) |
     ((imageint) IMGMAX << IMGBITS) | IMGMAX;
@@ -1715,6 +1853,11 @@ void AtomVec::data_atom(double *coord, imageint imagetmp, char **values)
   x[nlocal][0] = coord[0];
   x[nlocal][1] = coord[1];
   x[nlocal][2] = coord[2];
+  
+  vn[nlocal][0] = 0.0;
+  vn[nlocal][1] = 0.0; // adding vn
+  vn[nlocal][2] = 0.0;
+  
   mask[nlocal] = 1;
   image[nlocal] = imagetmp;
   v[nlocal][0] = 0.0;
@@ -2028,7 +2171,7 @@ void AtomVec::write_vel(FILE *fp, int n, double **buf)
 }
 
 /* ----------------------------------------------------------------------
-   pack bond info for data file into buf if non-nullptr
+   pack bond info for data file into buf if non-NULL
    return count of bonds from this proc
    do not count/pack bonds with bondtype = 0
    if bondtype is negative, flip back to positive
@@ -2086,7 +2229,7 @@ void AtomVec::write_bond(FILE *fp, int n, tagint **buf, int index)
 }
 
 /* ----------------------------------------------------------------------
-   pack angle info for data file into buf if non-nullptr
+   pack angle info for data file into buf if non-NULL
    return count of angles from this proc
    do not count/pack angles with angletype = 0
    if angletype is negative, flip back to positive
@@ -2274,12 +2417,12 @@ void AtomVec::write_improper(FILE *fp, int n, tagint **buf, int index)
    return # of bytes of allocated memory
 ------------------------------------------------------------------------- */
 
-double AtomVec::memory_usage()
+bigint AtomVec::memory_usage()
 {
   int datatype,cols,maxcols;
   void *pdata;
 
-  double bytes = 0;
+  bigint bytes = 0;
 
   bytes += memory->usage(tag,nmax);
   bytes += memory->usage(type,nmax);
@@ -2337,7 +2480,7 @@ double AtomVec::memory_usage()
    process field strings to initialize data structs for all other methods
 ------------------------------------------------------------------------- */
 
-void AtomVec::setup_fields()
+void AtomVec::setup_fields() // needs adding vn ???
 {
   int n,cols;
 
@@ -2365,18 +2508,18 @@ void AtomVec::setup_fields()
 
   // populate field-based data struct for each method to use
 
-  init_method(ngrow,&mgrow);
-  init_method(ncopy,&mcopy);
-  init_method(ncomm,&mcomm);
-  init_method(ncomm_vel,&mcomm_vel);
-  init_method(nreverse,&mreverse);
-  init_method(nborder,&mborder);
-  init_method(nborder_vel,&mborder_vel);
-  init_method(nexchange,&mexchange);
-  init_method(nrestart,&mrestart);
-  init_method(ncreate,&mcreate);
-  init_method(ndata_atom,&mdata_atom);
-  init_method(ndata_vel,&mdata_vel);
+  create_method(ngrow,&mgrow);
+  create_method(ncopy,&mcopy);
+  create_method(ncomm,&mcomm);
+  create_method(ncomm_vel,&mcomm_vel);
+  create_method(nreverse,&mreverse);
+  create_method(nborder,&mborder);
+  create_method(nborder_vel,&mborder_vel);
+  create_method(nexchange,&mexchange);
+  create_method(nrestart,&mrestart);
+  create_method(ncreate,&mcreate);
+  create_method(ndata_atom,&mdata_atom);
+  create_method(ndata_vel,&mdata_vel);
 
   // create threads data struct for grow and memory_usage to use
 
@@ -2450,6 +2593,7 @@ void AtomVec::setup_fields()
 int AtomVec::process_fields(char *str, const char *default_str, Method *method)
 {
   if (str == nullptr) {
+    method->index = nullptr;
     return 0;
   }
 
@@ -2465,45 +2609,62 @@ int AtomVec::process_fields(char *str, const char *default_str, Method *method)
   Atom::PerAtom *peratom = atom->peratom;
   int nperatom = atom->nperatom;
 
-  // allocate memory in method
-  method->resize(nfield);
-
-  std::vector<int> & index = method->index;
+  int *index;
   int match;
 
+  if (nfield) index = new int[nfield];
   for (int i = 0; i < nfield; i++) {
-    const std::string & field = words[i];
+    const char * field = words[i].c_str();
 
     // find field in master Atom::peratom list
 
     for (match = 0; match < nperatom; match++)
-      if (field == peratom[match].name) break;
+      if (strcmp(field, peratom[match].name) == 0) break;
     if (match == nperatom)
-      error->all(FLERR,"Peratom field {} not recognized", field);
+      error->all(FLERR,fmt::format("Peratom field {} not recognized", field));
     index[i] = match;
 
     // error if field appears multiple times
 
     for (match = 0; match < i; match++)
       if (index[i] == index[match])
-        error->all(FLERR,"Peratom field {} is repeated", field);
+        error->all(FLERR,fmt::format("Peratom field {} is repeated", field));
 
     // error if field is in default str
 
     for (match = 0; match < ndef; match++)
-      if (field == def_words[match])
-        error->all(FLERR,"Peratom field {} is a default", field);
+      if (strcmp(field, def_words[match].c_str()) == 0)
+        error->all(FLERR,fmt::format("Peratom field {} is a default", field));
   }
 
+  if (nfield) method->index = index;
+  else method->index = nullptr;
   return nfield;
 }
 
 /* ----------------------------------------------------------------------
-   init method data structs for processing fields
+   create a method data structs for processing fields
 ------------------------------------------------------------------------- */
 
-void AtomVec::init_method(int nfield, Method *method)
+void AtomVec::create_method(int nfield, Method *method)
 {
+  if (nfield > 0) {
+    method->pdata = new void*[nfield];
+    method->datatype = new int[nfield];
+    method->cols = new int[nfield];
+    method->maxcols = new int*[nfield];
+    method->collength = new int[nfield];
+    method->plength = new void*[nfield];
+  } else {
+    method->pdata = nullptr;
+    method->datatype = nullptr;
+    method->cols = nullptr;
+    method->maxcols = nullptr;
+    method->collength = nullptr;
+    method->plength = nullptr;
+    return;
+  }
+
   for (int i = 0; i < nfield; i++) {
     Atom::PerAtom *field = &atom->peratom[method->index[i]];
     method->pdata[i] = (void *) field->address;
@@ -2518,15 +2679,31 @@ void AtomVec::init_method(int nfield, Method *method)
 }
 
 /* ----------------------------------------------------------------------
-   Method class members
+   free memory in a method data structs
 ------------------------------------------------------------------------- */
 
-void AtomVec::Method::resize(int nfield) {
-  pdata.resize(nfield);
-  datatype.resize(nfield);
-  cols.resize(nfield);
-  maxcols.resize(nfield);
-  collength.resize(nfield);
-  plength.resize(nfield);
-  index.resize(nfield);
+void AtomVec::init_method(Method *method)
+{
+  method->pdata = nullptr;
+  method->datatype = nullptr;
+  method->cols = nullptr;
+  method->maxcols = nullptr;
+  method->collength = nullptr;
+  method->plength = nullptr;
+  method->index = nullptr;
+}
+
+/* ----------------------------------------------------------------------
+   free memory in a method data structs
+------------------------------------------------------------------------- */
+
+void AtomVec::destroy_method(Method *method)
+{
+  delete [] method->pdata;
+  delete [] method->datatype;
+  delete [] method->cols;
+  delete [] method->maxcols;
+  delete [] method->collength;
+  delete [] method->plength;
+  delete [] method->index;
 }
