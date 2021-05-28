@@ -89,6 +89,7 @@ class AtomVecDemsi : public AtomVec {
   double *coriolis;
   double **ocean_vel;
   double **bvector;
+  double **vn; // adding vn
   int radvary;
   int **nspecial;
   tagint **special;

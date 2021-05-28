@@ -37,8 +37,8 @@ AtomVecDemsi::AtomVecDemsi(LAMMPS *lmp) : AtomVec(lmp)
 
   comm_x_only = 1;
   comm_f_only = 0;
-  size_forward = 3;
-  size_reverse = 6;
+  size_forward = 6; //size_forward = 3; adding vn
+  size_reverse = 9; //size_reverse = 6; adding vn
   size_border = 20;
   size_velocity = 6;
   size_data_atom = 7;
@@ -110,6 +110,8 @@ void AtomVecDemsi::grow(int n)
   ocean_vel = memory->grow(atom->ocean_vel,nmax,2,"atom:ocean_vel");
   bvector = memory->grow(atom->bvector,nmax,2,"atom:bvector");
 
+  vn = memory->grow(atom->vn,nmax,3,"atom:vn"); // adding vn
+
   nspecial = memory->grow(atom->nspecial,nmax,3,"atom:nspecial");
   special = memory->grow(atom->special,nmax,atom->maxspecial,"atom:special");
   num_bond = memory->grow(atom->num_bond,nmax,"atom:num_bond");
@@ -146,6 +148,8 @@ void AtomVecDemsi::grow_reset()
   coriolis = atom->coriolis;
   ocean_vel = atom->ocean_vel;
   bvector = atom->bvector;
+
+  vn = atom->vn; // adding vn
 
   nspecial = atom->nspecial;
   special = atom->special;
@@ -187,6 +191,11 @@ void AtomVecDemsi::copy(int i, int j, int delflag)
   ocean_vel[j][1] = ocean_vel[i][1];
   bvector[j][0] = bvector[i][0];
   bvector[j][1] = bvector[i][1];
+
+  vn[j][0] = vn[i][0];
+  vn[j][1] = vn[i][1]; // adding vn
+  vn[j][2] = vn[i][2];
+
   nspecial[j][0] = nspecial[i][0];
   nspecial[j][1] = nspecial[i][1];
   nspecial[j][2] = nspecial[i][2];
@@ -218,6 +227,11 @@ int AtomVecDemsi::pack_comm(int n, int *list, double *buf,
         buf[m++] = x[j][0];
         buf[m++] = x[j][1];
         buf[m++] = x[j][2];
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
       }
     } else {
       if (domain->triclinic == 0) {
@@ -234,6 +248,11 @@ int AtomVecDemsi::pack_comm(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
       }
     }
 
@@ -245,6 +264,11 @@ int AtomVecDemsi::pack_comm(int n, int *list, double *buf,
         buf[m++] = x[j][0];
         buf[m++] = x[j][1];
         buf[m++] = x[j][2];
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = radius[j];
         buf[m++] = rmass[j];
       }
@@ -263,6 +287,11 @@ int AtomVecDemsi::pack_comm(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = radius[j];
         buf[m++] = rmass[j];
       }
@@ -288,6 +317,11 @@ int AtomVecDemsi::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0];
         buf[m++] = x[j][1];
         buf[m++] = x[j][2];
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = v[j][0];
         buf[m++] = v[j][1];
         buf[m++] = v[j][2];
@@ -311,6 +345,11 @@ int AtomVecDemsi::pack_comm_vel(int n, int *list, double *buf,
           buf[m++] = x[j][0] + dx;
           buf[m++] = x[j][1] + dy;
           buf[m++] = x[j][2] + dz;
+          
+          buf[m++] = vn[j][0];
+          buf[m++] = vn[j][1]; // adding vn
+          buf[m++] = vn[j][2];
+          
           buf[m++] = v[j][0];
           buf[m++] = v[j][1];
           buf[m++] = v[j][2];
@@ -327,6 +366,11 @@ int AtomVecDemsi::pack_comm_vel(int n, int *list, double *buf,
           buf[m++] = x[j][0] + dx;
           buf[m++] = x[j][1] + dy;
           buf[m++] = x[j][2] + dz;
+            
+            buf[m++] = vn[j][0];
+            buf[m++] = vn[j][1]; // adding vn
+            buf[m++] = vn[j][2];
+            
           if (mask[i] & deform_groupbit) {
             buf[m++] = v[j][0] + dvx;
             buf[m++] = v[j][1] + dvy;
@@ -351,6 +395,11 @@ int AtomVecDemsi::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0];
         buf[m++] = x[j][1];
         buf[m++] = x[j][2];
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = radius[j];
         buf[m++] = rmass[j];
         buf[m++] = v[j][0];
@@ -376,6 +425,11 @@ int AtomVecDemsi::pack_comm_vel(int n, int *list, double *buf,
           buf[m++] = x[j][0] + dx;
           buf[m++] = x[j][1] + dy;
           buf[m++] = x[j][2] + dz;
+          
+          buf[m++] = vn[j][0]; // adding vn
+          buf[m++] = vn[j][1];
+          buf[m++] = vn[j][2];
+          
           buf[m++] = radius[j];
           buf[m++] = rmass[j];
           buf[m++] = v[j][0];
@@ -394,6 +448,11 @@ int AtomVecDemsi::pack_comm_vel(int n, int *list, double *buf,
           buf[m++] = x[j][0] + dx;
           buf[m++] = x[j][1] + dy;
           buf[m++] = x[j][2] + dz;
+          
+          buf[m++] = vn[j][0];
+          buf[m++] = vn[j][1]; // adding vn
+          buf[m++] = vn[j][2];
+          
           buf[m++] = radius[j];
           buf[m++] = rmass[j];
           if (mask[i] & deform_groupbit) {
@@ -446,6 +505,10 @@ void AtomVecDemsi::unpack_comm(int n, int first, double *buf)
       x[i][0] = buf[m++];
       x[i][1] = buf[m++];
       x[i][2] = buf[m++];
+      
+      vn[i][0] = buf[m++];
+      vn[i][1] = buf[m++]; // adding vn
+      vn[i][2] = buf[m++];
     }
   } else {
     m = 0;
@@ -454,6 +517,11 @@ void AtomVecDemsi::unpack_comm(int n, int first, double *buf)
       x[i][0] = buf[m++];
       x[i][1] = buf[m++];
       x[i][2] = buf[m++];
+      
+      vn[i][0] = buf[m++];
+      vn[i][1] = buf[m++]; // adding vn
+      vn[i][2] = buf[m++];
+      
       radius[i] = buf[m++];
       rmass[i] = buf[m++];
     }
@@ -473,9 +541,15 @@ void AtomVecDemsi::unpack_comm_vel(int n, int first, double *buf)
       x[i][0] = buf[m++];
       x[i][1] = buf[m++];
       x[i][2] = buf[m++];
+      
+      vn[i][0] = buf[m++];
+      vn[i][1] = buf[m++]; // adding vn
+      vn[i][2] = buf[m++];
+      
       v[i][0] = buf[m++];
       v[i][1] = buf[m++];
       v[i][2] = buf[m++];
+      
       omega[i][0] = buf[m++];
       omega[i][1] = buf[m++];
       omega[i][2] = buf[m++];
@@ -487,6 +561,11 @@ void AtomVecDemsi::unpack_comm_vel(int n, int first, double *buf)
       x[i][0] = buf[m++];
       x[i][1] = buf[m++];
       x[i][2] = buf[m++];
+      
+      vn[i][0] = buf[m++];
+      vn[i][1] = buf[m++]; // adding vn
+      vn[i][2] = buf[m++];
+      
       radius[i] = buf[m++];
       rmass[i] = buf[m++];
       v[i][0] = buf[m++];
@@ -528,6 +607,11 @@ int AtomVecDemsi::pack_reverse(int n, int first, double *buf)
     buf[m++] = f[i][0];
     buf[m++] = f[i][1];
     buf[m++] = f[i][2];
+    
+    buf[m++] = vn[i][0];
+    buf[m++] = vn[i][1]; // adding vn
+    buf[m++] = vn[i][2];
+    
     buf[m++] = torque[i][0];
     buf[m++] = torque[i][1];
     buf[m++] = torque[i][2];
@@ -563,6 +647,11 @@ void AtomVecDemsi::unpack_reverse(int n, int *list, double *buf)
     f[j][0] += buf[m++];
     f[j][1] += buf[m++];
     f[j][2] += buf[m++];
+    
+    vn[j][0] += buf[m++];
+    vn[j][1] += buf[m++]; // adding vn
+    vn[j][2] += buf[m++];
+    
     torque[j][0] += buf[m++];
     torque[j][1] += buf[m++];
     torque[j][2] += buf[m++];
@@ -600,6 +689,11 @@ int AtomVecDemsi::pack_border(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+
       buf[m++] = forcing[j][0];
       buf[m++] = forcing[j][1];
       buf[m++] = mean_thickness[j];
@@ -631,6 +725,11 @@ int AtomVecDemsi::pack_border(int n, int *list, double *buf,
       buf[m++] = x[j][0] + dx;
       buf[m++] = x[j][1] + dy;
       buf[m++] = x[j][2] + dz;
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
       buf[m++] = forcing[j][0];
       buf[m++] = forcing[j][1];
       buf[m++] = mean_thickness[j];
@@ -671,6 +770,11 @@ int AtomVecDemsi::pack_border_vel(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+
       buf[m++] = forcing[j][0];
       buf[m++] = forcing[j][1];
       buf[m++] = mean_thickness[j];
@@ -709,6 +813,11 @@ int AtomVecDemsi::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+
         buf[m++] = forcing[j][0];
         buf[m++] = forcing[j][1];
         buf[m++] = mean_thickness[j];
@@ -740,6 +849,11 @@ int AtomVecDemsi::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+
         buf[m++] = forcing[j][0];
         buf[m++] = forcing[j][1];
         buf[m++] = mean_thickness[j];
@@ -806,6 +920,11 @@ void AtomVecDemsi::unpack_border(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+
+   vn[i][0] = buf[m++];
+   vn[i][1] = buf[m++]; // adding vn
+   vn[i][2] = buf[m++];
+
     forcing[i][0] = buf[m++];
     forcing[i][1] = buf[m++];
     mean_thickness[i] = buf[m++];
@@ -843,6 +962,11 @@ void AtomVecDemsi::unpack_border_vel(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    
+   vn[i][0] = buf[m++];
+   vn[i][1] = buf[m++]; // adding vn
+   vn[i][2] = buf[m++];
+    
     forcing[i][0] = buf[m++];
     forcing[i][1] = buf[m++];
     mean_thickness[i] = buf[m++];
@@ -898,6 +1022,11 @@ int AtomVecDemsi::pack_exchange(int i, double *buf)
   buf[m++] = x[i][0];
   buf[m++] = x[i][1];
   buf[m++] = x[i][2];
+  
+  buf[m++] = vn[i][0];
+  buf[m++] = vn[i][1]; // adding vn
+  buf[m++] = vn[i][2];
+  
   buf[m++] = forcing[i][0];
   buf[m++] = forcing[i][1];
   buf[m++] = mean_thickness[i];
@@ -908,6 +1037,7 @@ int AtomVecDemsi::pack_exchange(int i, double *buf)
   buf[m++] = ocean_vel[i][1];
   buf[m++] = bvector[i][0];
   buf[m++] = bvector[i][1];
+
   buf[m++] = v[i][0];
   buf[m++] = v[i][1];
   buf[m++] = v[i][2];
@@ -952,16 +1082,22 @@ int AtomVecDemsi::unpack_exchange(double *buf)
   x[nlocal][0] = buf[m++];
   x[nlocal][1] = buf[m++];
   x[nlocal][2] = buf[m++];
-  forcing[nlocal][0] = buf[m++];
-  forcing[nlocal][1] = buf[m++];
-  mean_thickness[nlocal] = buf[m++];
-  min_thickness[nlocal] = buf[m++];
-  ice_area[nlocal] = buf[m++];
-  coriolis[nlocal] = buf[m++];
-  ocean_vel[nlocal][0] = buf[m++];
-  ocean_vel[nlocal][1] = buf[m++];
-  bvector[nlocal][0] = buf[m++];
-  bvector[nlocal][1] = buf[m++];
+  
+  vn[nlocal][0] = buf[m++];
+  vn[nlocal][1] = buf[m++]; // adding vn
+  vn[nlocal][2] = buf[m++];
+  
+forcing[nlocal][0] = buf[m++];
+forcing[nlocal][1] = buf[m++];
+mean_thickness[nlocal] = buf[m++];
+min_thickness[nlocal] = buf[m++];
+ice_area[nlocal] = buf[m++];
+coriolis[nlocal] = buf[m++];
+ocean_vel[nlocal][0] = buf[m++];
+ocean_vel[nlocal][1] = buf[m++];
+bvector[nlocal][0] = buf[m++];
+bvector[nlocal][1] = buf[m++];
+
   v[nlocal][0] = buf[m++];
   v[nlocal][1] = buf[m++];
   v[nlocal][2] = buf[m++];
@@ -976,16 +1112,16 @@ int AtomVecDemsi::unpack_exchange(double *buf)
   omega[nlocal][1] = buf[m++];
   omega[nlocal][2] = buf[m++];
 
-  num_bond[nlocal] = (int) ubuf(buf[m++]).i;
-  for (int k = 0; k < num_bond[nlocal]; k++) {
-    bond_type[nlocal][k] = (int) ubuf(buf[m++]).i;
-    bond_atom[nlocal][k] = (tagint) ubuf(buf[m++]).i;
-  }
-  nspecial[nlocal][0] = (int) ubuf(buf[m++]).i;
-  nspecial[nlocal][1] = (int) ubuf(buf[m++]).i;
-  nspecial[nlocal][2] = (int) ubuf(buf[m++]).i;
-  for (int k = 0; k < nspecial[nlocal][2]; k++)
-    special[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+num_bond[nlocal] = (int) ubuf(buf[m++]).i;
+for (int k = 0; k < num_bond[nlocal]; k++) {
+  bond_type[nlocal][k] = (int) ubuf(buf[m++]).i;
+  bond_atom[nlocal][k] = (tagint) ubuf(buf[m++]).i;
+}
+nspecial[nlocal][0] = (int) ubuf(buf[m++]).i;
+nspecial[nlocal][1] = (int) ubuf(buf[m++]).i;
+nspecial[nlocal][2] = (int) ubuf(buf[m++]).i;
+for (int k = 0; k < nspecial[nlocal][2]; k++)
+  special[nlocal][k] = (tagint) ubuf(buf[m++]).i;
 
   if (atom->nextra_grow)
     for (int iextra = 0; iextra < atom->nextra_grow; iextra++)
@@ -1147,6 +1283,11 @@ void AtomVecDemsi::create_atom(int itype, double *coord)
   x[nlocal][0] = coord[0];
   x[nlocal][1] = coord[1];
   x[nlocal][2] = coord[2];
+  
+  vn[nlocal][0] = 0.0;
+  vn[nlocal][1] = 0.0; // adding vn
+  vn[nlocal][2] = 0.0;
+
   mask[nlocal] = 1;
   image[nlocal] = ((imageint) IMGMAX << IMG2BITS) |
     ((imageint) IMGMAX << IMGBITS) | IMGMAX;
@@ -1206,7 +1347,11 @@ void AtomVecDemsi::data_atom(double *coord, imageint imagetmp, char **values)
   x[nlocal][0] = coord[0];
   x[nlocal][1] = coord[1];
   x[nlocal][2] = coord[2];
-
+  
+  vn[nlocal][0] = 0.0;
+  vn[nlocal][1] = 0.0; // adding vn
+  vn[nlocal][2] = 0.0;
+  
   image[nlocal] = imagetmp;
 
   mask[nlocal] = 1;
@@ -1411,7 +1556,9 @@ double AtomVecDemsi::memory_usage()
   if (atom->memcheck("x")) bytes += memory->usage(x,nmax,3);
   if (atom->memcheck("v")) bytes += memory->usage(v,nmax,3);
   if (atom->memcheck("f")) bytes += memory->usage(f,nmax*comm->nthreads,3);
-
+  
+  if (atom->memcheck("vn")) bytes += memory->usage(vn,nmax,3); // adding vn
+  
   if (atom->memcheck("radius")) bytes += memory->usage(radius,nmax);
   if (atom->memcheck("rmass")) bytes += memory->usage(rmass,nmax);
   if (atom->memcheck("omega")) bytes += memory->usage(omega,nmax,3);

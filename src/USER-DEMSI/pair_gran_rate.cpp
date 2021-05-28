@@ -38,9 +38,6 @@
 using namespace LAMMPS_NS;
 using namespace MathConst;
 
-#define DEBUGID_1 35
-#define DEBUGID_2 55
-#define DEBUG_TIMESTEP 32696
 /* ---------------------------------------------------------------------- */
 
 PairGranRate::PairGranRate(LAMMPS *lmp) :
@@ -944,13 +941,13 @@ void PairGranRate::back_substitute()
 void PairGranRate::settings(int narg, char **arg)
 {
   if (narg != 7) error->all(FLERR,"Illegal pair_style command");
-             bulkModulus = force->numeric(FLERR, arg[0]);
-            shearModulus = force->numeric(FLERR, arg[1]);
-        shearYieldStress = force->numeric(FLERR, arg[2]);
-  compressiveYieldStress = force->numeric(FLERR, arg[3]);
-   tensileFractureStress = force->numeric(FLERR, arg[4]);
-     timeIntegrationFlag = force->numeric(FLERR, arg[5]);
-                 bulkCFL = force->numeric(FLERR, arg[6]);
+             bulkModulus = utils::numeric(FLERR, arg[0],false,lmp);
+            shearModulus = utils::numeric(FLERR, arg[1],false,lmp);
+        shearYieldStress = utils::numeric(FLERR, arg[2],false,lmp);
+  compressiveYieldStress = utils::numeric(FLERR, arg[3],false,lmp);
+   tensileFractureStress = utils::numeric(FLERR, arg[4],false,lmp);
+     timeIntegrationFlag = utils::numeric(FLERR, arg[5],false,lmp);
+                 bulkCFL = utils::numeric(FLERR, arg[6],false,lmp);
 }
 
 /* ---------------------------------------------------------------------- */

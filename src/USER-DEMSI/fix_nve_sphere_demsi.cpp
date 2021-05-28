@@ -42,8 +42,6 @@ FixNVESphereDemsi::FixNVESphereDemsi(LAMMPS *lmp, int narg, char **arg) :
   time_integrate = 1;
 
   // process extra keywords
-  // inertia = moment of inertia prefactor for sphere or disc
-  inertia = 0.5;
 
   ocean_density = ocean_drag = 0;
 
@@ -78,8 +76,6 @@ void FixNVESphereDemsi::init()
 
 void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
 {
-  double dtfm;
-
   double **x = atom->x;
   double **v = atom->v;
   double **f = atom->f;
@@ -108,11 +104,7 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
 
   double dtv = update->dt;
   double dtf = 0.5 * update->dt;
-  
-  double dtfrotate = dtf / inertia;
   double dtirotate;
-  // update v,x,omega for all particles
-  // d_omega/dt = torque / inertia
 
   if (timeIntegrationFlag == 0) { // Hopkins-Verlet form
 
@@ -141,8 +133,7 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
         x[i][0] += dtv * v[i][0];
         x[i][1] += dtv * v[i][1];
 
-//      dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
-        dtirotate = dtf/(inertia*radius[i]*radius[i]*rmass[i]);
+        dtirotate = dtf/(0.5*radius[i]*radius[i]*rmass[i]);
         omega[i][2] += dtirotate * torque[i][2];
 
       } // end if (mask[i] & groupbit)
@@ -178,8 +169,7 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
         v[i][0] = detinv*( a11*b0 - a01*b1);
         v[i][1] = detinv*(-a10*b0 + a00*b1);
 
-//      dtirotate = dtf/(inertia*radius[i]*radius[i]*rmass[i]);
-        dtirotate = dtv/(inertia*radius[i]*radius[i]*rmass[i]);
+        dtirotate = dtv/(0.5*radius[i]*radius[i]*rmass[i]);
         omega[i][2] += dtirotate * torque[i][2];
         
       } // end if (mask[i] & groupbit)
@@ -221,10 +211,6 @@ void FixNVESphereDemsi::final_integrate()
   double dtv = update->dt;
   double dtf = 0.5 * update->dt;
   double dtirotate;
-  double dtfrotate = dtf / inertia;
-
-  // update v,omega for all particles
-  // d_omega/dt = torque / inertia
 
   if (timeIntegrationFlag == 0) { // Hopkins-Verlet form
   
@@ -246,7 +232,7 @@ void FixNVESphereDemsi::final_integrate()
       v[i][0] = detinv*( a11*b0 - a01*b1);
       v[i][1] = detinv*(-a10*b0 + a00*b1);
 
-      dtirotate = dtf/(inertia*radius[i]*radius[i]*rmass[i]);
+      dtirotate = dtf/(0.5*radius[i]*radius[i]*rmass[i]);
       omega[i][2] += dtirotate * torque[i][2];
 
       rke += (omega[i][0]*omega[i][0] + omega[i][1]*omega[i][1] +
