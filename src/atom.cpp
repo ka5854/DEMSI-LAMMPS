@@ -214,6 +214,7 @@ Atom::Atom(LAMMPS *lmp) : Pointers(lmp)
   coriolis = nullptr;
   ocean_vel = nullptr;
   bvector = nullptr;
+  vn = nullptr; // adding vn
 
   // end of customization section
   // --------------------------------------------------------------------

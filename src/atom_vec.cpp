@@ -53,6 +53,7 @@ AtomVec::AtomVec(LAMMPS *lmp) : Pointers(lmp)
   type = mask = nullptr;
   image = nullptr;
   x = v = f = nullptr;
+  vn = nullptr; // adding vn
 
   threads = nullptr;
 
@@ -216,6 +217,7 @@ void AtomVec::grow(int n)
   x = memory->grow(atom->x,nmax,3,"atom:x");
   v = memory->grow(atom->v,nmax,3,"atom:v");
   f = memory->grow(atom->f,nmax*comm->nthreads,3,"atom:f");
+  vn = memory->grow(atom->vn,nmax,3,"atom:vn"); // adding vn
 
   for (int i = 0; i < ngrow; i++) {
     pdata = mgrow.pdata[i];
@@ -274,6 +276,11 @@ void AtomVec::copy(int i, int j, int delflag)
   x[j][0] = x[i][0];
   x[j][1] = x[i][1];
   x[j][2] = x[i][2];
+  
+  vn[j][0] = x[i][0];
+  vn[j][1] = x[i][1]; // adding vn
+  vn[j][2] = x[i][2];
+  
   v[j][0] = v[i][0];
   v[j][1] = v[i][1];
   v[j][2] = v[i][2];
@@ -361,6 +368,11 @@ int AtomVec::pack_comm(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
     }
   } else {
     if (domain->triclinic == 0) {
@@ -377,6 +389,10 @@ int AtomVec::pack_comm(int n, int *list, double *buf,
       buf[m++] = x[j][0] + dx;
       buf[m++] = x[j][1] + dy;
       buf[m++] = x[j][2] + dz;
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
     }
   }
 
@@ -455,6 +471,11 @@ int AtomVec::pack_comm_vel(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
       buf[m++] = v[j][0];
       buf[m++] = v[j][1];
       buf[m++] = v[j][2];
@@ -475,6 +496,11 @@ int AtomVec::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = v[j][0];
         buf[m++] = v[j][1];
         buf[m++] = v[j][2];
@@ -488,6 +514,11 @@ int AtomVec::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         if (mask[i] & deform_groupbit) {
           buf[m++] = v[j][0] + dvx;
           buf[m++] = v[j][1] + dvy;
@@ -573,6 +604,10 @@ void AtomVec::unpack_comm(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    
+    vn[i][0] = buf[m++];
+    vn[i][1] = buf[m++]; // adding vn
+    vn[i][2] = buf[m++];
   }
 
   if (ncomm) {
@@ -633,6 +668,11 @@ void AtomVec::unpack_comm_vel(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    
+    vn[i][0] = buf[m++];
+    vn[i][1] = buf[m++]; // adding vn
+    vn[i][2] = buf[m++];
+    
     v[i][0] = buf[m++];
     v[i][1] = buf[m++];
     v[i][2] = buf[m++];
@@ -696,6 +736,10 @@ int AtomVec::pack_reverse(int n, int first, double *buf)
     buf[m++] = f[i][0];
     buf[m++] = f[i][1];
     buf[m++] = f[i][2];
+    
+    buf[m++] = vn[i][0];
+    buf[m++] = vn[i][1]; // adding vn
+    buf[m++] = vn[i][2];
   }
 
   if (nreverse) {
@@ -762,6 +806,10 @@ void AtomVec::unpack_reverse(int n, int *list, double *buf)
     f[j][0] += buf[m++];
     f[j][1] += buf[m++];
     f[j][2] += buf[m++];
+    
+    vn[j][0] += buf[m++];
+    vn[j][1] += buf[m++]; // adding vn
+    vn[j][2] += buf[m++];
   }
 
   if (nreverse) {
@@ -853,6 +901,11 @@ int AtomVec::pack_border(int n, int *list, double *buf, int pbc_flag, int *pbc)
       buf[m++] = x[j][0] + dx;
       buf[m++] = x[j][1] + dy;
       buf[m++] = x[j][2] + dz;
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
       buf[m++] = ubuf(tag[j]).d;
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
@@ -938,6 +991,11 @@ int AtomVec::pack_border_vel(int n, int *list, double *buf,
       buf[m++] = x[j][0];
       buf[m++] = x[j][1];
       buf[m++] = x[j][2];
+      
+      buf[m++] = vn[j][0];
+      buf[m++] = vn[j][1]; // adding vn
+      buf[m++] = vn[j][2];
+      
       buf[m++] = ubuf(tag[j]).d;
       buf[m++] = ubuf(type[j]).d;
       buf[m++] = ubuf(mask[j]).d;
@@ -961,6 +1019,11 @@ int AtomVec::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = ubuf(tag[j]).d;
         buf[m++] = ubuf(type[j]).d;
         buf[m++] = ubuf(mask[j]).d;
@@ -977,6 +1040,11 @@ int AtomVec::pack_border_vel(int n, int *list, double *buf,
         buf[m++] = x[j][0] + dx;
         buf[m++] = x[j][1] + dy;
         buf[m++] = x[j][2] + dz;
+        
+        buf[m++] = vn[j][0];
+        buf[m++] = vn[j][1]; // adding vn
+        buf[m++] = vn[j][2];
+        
         buf[m++] = ubuf(tag[j]).d;
         buf[m++] = ubuf(type[j]).d;
         buf[m++] = ubuf(mask[j]).d;
@@ -1070,6 +1138,11 @@ void AtomVec::unpack_border(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    
+    vn[i][0] = buf[m++];
+    vn[i][1] = buf[m++]; // adding vn
+    vn[i][2] = buf[m++];
+    
     tag[i] = (tagint) ubuf(buf[m++]).i;
     type[i] = (int) ubuf(buf[m++]).i;
     mask[i] = (int) ubuf(buf[m++]).i;
@@ -1139,6 +1212,11 @@ void AtomVec::unpack_border_vel(int n, int first, double *buf)
     x[i][0] = buf[m++];
     x[i][1] = buf[m++];
     x[i][2] = buf[m++];
+    
+    vn[i][0] = buf[m++];
+    vn[i][1] = buf[m++]; // adding vn
+    vn[i][2] = buf[m++];
+    
     tag[i] = (tagint) ubuf(buf[m++]).i;
     type[i] = (int) ubuf(buf[m++]).i;
     mask[i] = (int) ubuf(buf[m++]).i;
@@ -1211,6 +1289,11 @@ int AtomVec::pack_exchange(int i, double *buf)
   buf[m++] = x[i][0];
   buf[m++] = x[i][1];
   buf[m++] = x[i][2];
+  
+  buf[m++] = vn[i][0];
+  buf[m++] = vn[i][1]; // adding vn
+  buf[m++] = vn[i][2];
+  
   buf[m++] = v[i][0];
   buf[m++] = v[i][1];
   buf[m++] = v[i][2];
@@ -1303,6 +1386,11 @@ int AtomVec::unpack_exchange(double *buf)
   x[nlocal][0] = buf[m++];
   x[nlocal][1] = buf[m++];
   x[nlocal][2] = buf[m++];
+  
+  vn[nlocal][0] = buf[m++];
+  vn[nlocal][1] = buf[m++]; // adding vn
+  vn[nlocal][2] = buf[m++];
+  
   v[nlocal][0] = buf[m++];
   v[nlocal][1] = buf[m++];
   v[nlocal][2] = buf[m++];
@@ -1649,6 +1737,11 @@ void AtomVec::create_atom(int itype, double *coord)
   x[nlocal][0] = coord[0];
   x[nlocal][1] = coord[1];
   x[nlocal][2] = coord[2];
+  
+  vn[nlocal][0] = 0.0;
+  vn[nlocal][1] = 0.0; // adding vn
+  vn[nlocal][2] = 0.0;
+  
   mask[nlocal] = 1;
   image[nlocal] = ((imageint) IMGMAX << IMG2BITS) |
     ((imageint) IMGMAX << IMGBITS) | IMGMAX;
@@ -1715,6 +1808,11 @@ void AtomVec::data_atom(double *coord, imageint imagetmp, char **values)
   x[nlocal][0] = coord[0];
   x[nlocal][1] = coord[1];
   x[nlocal][2] = coord[2];
+  
+  vn[nlocal][0] = 0.0;
+  vn[nlocal][1] = 0.0; // adding vn
+  vn[nlocal][2] = 0.0;
+  
   mask[nlocal] = 1;
   image[nlocal] = imagetmp;
   v[nlocal][0] = 0.0;
@@ -2288,6 +2386,7 @@ double AtomVec::memory_usage()
   bytes += memory->usage(x,nmax,3);
   bytes += memory->usage(v,nmax,3);
   bytes += memory->usage(f,nmax*comm->nthreads,3);
+  bytes += memory->usage(vn,nmax,3); // adding vn
 
   for (int i = 0; i < ngrow; i++) {
     pdata = mgrow.pdata[i];
@@ -2337,7 +2436,7 @@ double AtomVec::memory_usage()
    process field strings to initialize data structs for all other methods
 ------------------------------------------------------------------------- */
 
-void AtomVec::setup_fields()
+void AtomVec::setup_fields() // needs adding vn ???
 {
   int n,cols;
 

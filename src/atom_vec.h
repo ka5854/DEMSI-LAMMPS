@@ -180,7 +180,7 @@ class AtomVec : protected Pointers {
   tagint *tag;                 // peratom fields common to all styles
   int *type,*mask;
   imageint *image;
-  double **x,**v,**f;
+  double **x,**v,**f,**vn; // adding vn
 
   // standard list of peratom fields always operated on by different methods
   // common to all styles, so not listed in field strings
