@@ -209,14 +209,14 @@ void PairGranRate::compute_rate_exverlet()
          all the history associated with pair ii-jj
          For all pairs:
          *history[0]: bondPressure
-         *history[1]: bondShearX
-         *history[2]: bondShearY
-         *history[3]: bondFlag [0=no bond, 1=bonded]]
+         *history[1]: bondShear
+         *history[2]: bondFlag [0=no bond, 1=bonded]]
       */
 
       delx = x[j][0] - x[i][0]; // outward normal relative to [i]
       dely = x[j][1] - x[i][1];
       rsq = delx*delx + dely*dely;
+//    radsum = OverLap*(radi + radj);
       radsum = 1.01*(radi + radj);
 
       bondFlagIn = int(history[2]);
@@ -233,7 +233,7 @@ void PairGranRate::compute_rate_exverlet()
           firsttouch[i][jj] = 1;
           Fplus = 1;
         } // end if(rsq >= radsum*radsum
-        history[0] = history[1] = history[2] = 0.;
+        history[0] = history[1] = 0.;
       } // end if(!bondFlagIn)
 
       if (Fplus){
@@ -271,7 +271,7 @@ void PairGranRate::compute_rate_exverlet()
 
         fx = (Pplus*nx + Sxplus)*hDeltal;
         fy = (Pplus*ny + Syplus)*hDeltal;
-        fz = (Sxplus*ny - Syplus*nx)*hDeltal; // (R x F) * Area
+        fz = (Sxplus*ny - Syplus*nx)*hDeltal; // (n x F) * Area = Torque/Radius
         
         f[i][0] -= fx;
         f[i][1] -= fy;
@@ -283,8 +283,8 @@ void PairGranRate::compute_rate_exverlet()
           torque[j][2] -= radj*fz;
         }
 
-          // test for tensile fracture, compressive flowstress, shear flowstress
-
+        // test for tensile fracture, compressive flowstress, shear flowstress
+//      if(jtype != 2) { // do not limit stresses on the coastline (~noslip boundary condition)
           if (Pplus <= tensileFractureStress) { // tensile fracture
             Pplus = 0.;
             Fplus = 0;
@@ -292,21 +292,18 @@ void PairGranRate::compute_rate_exverlet()
             Pplus = compressiveYieldStress;
           }
           SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/shearYieldStress;
-          if (SYield > 1.0) {
-//          Sxplus /= SYield;
-//          Syplus /= SYield;
-//          Sxplus = Syplus = 0.;
+          if (SYield > 1.0) { // perfectly plastic shear flowstress
             Splus /= SYield;
           }
-
-          // update history
-          if(historyupdate){
-            history[0] = Pplus;
-            history[1] = Splus;
-            history[2] = double(Fplus);
-          }
-
+//      } // end if (jtype != 2)
       } // end if (Fplus)
+
+        // update history
+        if(historyupdate){
+          history[0] = Pplus;
+          history[1] = Splus;
+          history[2] = double(Fplus);
+        }
 
       if (evflag) ev_tally_xyz(i,j,atom->nlocal, force->newton_pair,
               0.0,0.0,fx,fy,0,x[i][0]-x[j][0],x[i][1]-x[j][1],0);
@@ -394,14 +391,14 @@ void PairGranRate::compute_rate_explicit()
          all the history associated with pair ii-jj
          For all pairs:
          *history[0]: bondPressure
-         *history[1]: bondShearX
-         *history[2]: bondShearY
-         *history[3]: bondFlag [0=no bond, 1=bonded]]
+         *history[1]: bondShear
+         *history[2]: bondFlag [0=no bond, 1=bonded]]
       */
 
       delx = x[j][0] - x[i][0]; // outward normal relative to [i]
       dely = x[j][1] - x[i][1];
       rsq = delx*delx + dely*dely;
+//    radsum = OverLap*(radi + radj);
       radsum = 1.01*(radi + radj);
 
       bondFlagIn = int(history[2]);
@@ -418,7 +415,7 @@ void PairGranRate::compute_rate_explicit()
           firsttouch[i][jj] = 1;
           Fplus = 1;
         } // end if(rsq >= radsum*radsum
-        history[0] = history[1] = history[2] = 0.;
+        history[0] = history[1] = 0.;
       } // end if(!bondFlagIn)
 
       if (Fplus){
@@ -442,8 +439,8 @@ void PairGranRate::compute_rate_explicit()
         // magnitude of the relative tangential velocity
         vttr = vrx*tx + vry*ty + wrz;
 
-        Pplus =  -bulkModulus*dtf*vnnr*rinv; // half step stress increment
-        Splus = -shearModulus*dtf*vttr*rinv;
+        Pplus =  -bulkModulus*dtv*vnnr*rinv;
+        Splus = -shearModulus*dtv*vttr*rinv;
 
         Sxplus = Splus*tx;
         Syplus = Splus*ty;
@@ -456,7 +453,7 @@ void PairGranRate::compute_rate_explicit()
 
         fx = (Pplus*nx + Sxplus)*hDeltal;
         fy = (Pplus*ny + Syplus)*hDeltal;
-        fz = (Sxplus*ny - Syplus*nx)*hDeltal; // (R x F) * Area
+        fz = (Sxplus*ny - Syplus*nx)*hDeltal; // (n x F) * Area = Torque/Radius
 
         f[i][0] -= fx;
         f[i][1] -= fy;
@@ -566,14 +563,14 @@ void PairGranRate::compute_rate_implicit()
          all the history associated with pair ii-jj
          For all pairs:
          *history[0]: bondPressure
-         *history[1]: bondShearX
-         *history[2]: bondShearY
-         *history[3]: bondFlag [0=no bond, 1=bonded]]
+         *history[1]: bondShear
+         *history[2]: bondFlag [0=no bond, 1=bonded]]
       */
 
       delx = x[j][0] - x[i][0]; // outward normal relative to [i]
       dely = x[j][1] - x[i][1];
       rsq = delx*delx + dely*dely;
+//    radsum = OverLap*(radi + radj);
       radsum = 1.01*(radi + radj);
 
       bondFlagIn = int(history[2]);
@@ -590,7 +587,7 @@ void PairGranRate::compute_rate_implicit()
           firsttouch[i][jj] = 1;
           Fplus = 1;
         } // end if(rsq >= radsum*radsum
-        history[0] = history[1] = history[2] = 0.;
+        history[0] = history[1] = 0.;
       } // end if(!bondFlagIn)
 
       if (Fplus){
@@ -634,7 +631,7 @@ void PairGranRate::compute_rate_implicit()
 
         fx = (Pplus*nx + Sxplus)*hDeltal;
         fy = (Pplus*ny + Syplus)*hDeltal;
-        fz = (Sxplus*ny - Syplus*nx)*hDeltal; // (R x F) * Area = Torque
+        fz = (Sxplus*ny - Syplus*nx)*hDeltal; // (n x F) * Area = Torque/Radius
         
         f[i][0] -= fx;
         f[i][1] -= fy;
@@ -771,14 +768,14 @@ void PairGranRate::load_new_forces()
          all the history associated with pair ii-jj
          For all pairs:
          *history[0]: bondPressure
-         *history[1]: bondShearX
-         *history[2]: bondShearY
-         *history[3]: bondFlag [0=no bond, 1=bonded]]
+         *history[1]: bondShear
+         *history[2]: bondFlag [0=no bond, 1=bonded]]
       */
 
       delx = x[j][0] - x[i][0]; // outward normal relative to [i]
       dely = x[j][1] - x[i][1];
       rsq = delx*delx + dely*dely;
+//    radsum = OverLap*(radi + radj);
       radsum = 1.01*(radi + radj);
 
       bondFlagIn = int(history[2]);
@@ -795,7 +792,7 @@ void PairGranRate::load_new_forces()
           firsttouch[i][jj] = 1;
           Fplus = 1;
         } // end if(rsq >= radsum*radsum
-        history[0] = history[1] = history[2] = 0.;
+        history[0] = history[1] = 0.;
       } // end if(!bondFlagIn)
 
       if (Fplus){
@@ -852,28 +849,26 @@ void PairGranRate::load_new_forces()
         }
 
         // test for tensile fracture, compressive flowstress, shear flowstress
-
-        if (Pplus <= tensileFractureStress) { // tensile fracture
-          Pplus = 0.;
-          Fplus = 0;
-        } else if (Pplus > compressiveYieldStress) { // perfectly plastic compressive flowstress
-          Pplus = compressiveYieldStress;
-        }
-        SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/shearYieldStress;
-        if (SYield > 1.0) {
-//          Sxplus /= SYield;
-//          Syplus /= SYield;
-//          Sxplus = Syplus = 0.;
+//      if(jtype != 2) { // do not limit stresses on the coastline (~noslip boundary condition)
+          if (Pplus <= tensileFractureStress) { // tensile fracture
+            Pplus = 0.;
+            Fplus = 0;
+          } else if (Pplus > compressiveYieldStress) { // perfectly plastic compressive flowstress
+            Pplus = compressiveYieldStress;
+          }
+          SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/shearYieldStress;
+          if (SYield > 1.0) { // perfectly plastic shear flowstress
             Splus /= SYield;
+          }
+//      } // end if (jtype != 2)
+      } // end if (Fplus)
+
+        // update history
+        if(historyupdate){
+          history[0] = Pplus;
+          history[1] = Splus;
+          history[2] = double(Fplus);
         }
-      } // end if(Fplus)
-      
-      // update history
-      if(historyupdate){
-        history[0] = Pplus;
-        history[1] = Splus;
-        history[2] = double(Fplus);
-      }
 
       if (evflag) ev_tally_xyz(i,j,atom->nlocal, force->newton_pair,
               0.0,0.0,fx,fy,0,x[i][0]-x[j][0],x[i][1]-x[j][1],0);

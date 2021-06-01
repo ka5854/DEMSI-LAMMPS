@@ -114,7 +114,10 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
         vn[i][0] = v[i][0];
         vn[i][1] = v[i][1];
         vn[i][2] = omega[i][2];
-      
+
+        x[i][0] += dtv * v[i][0];
+        x[i][1] += dtv * v[i][1];
+
         vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
           (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
         D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
@@ -129,9 +132,6 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
         detinv = 1.0/(a00*a11 - a01*a10);
         v[i][0] = detinv*( a11*b0 - a01*b1);
         v[i][1] = detinv*(-a10*b0 + a00*b1);
-
-        x[i][0] += dtv * v[i][0];
-        x[i][1] += dtv * v[i][1];
 
         dtirotate = dtf/(0.5*radius[i]*radius[i]*rmass[i]);
         omega[i][2] += dtirotate * torque[i][2];
@@ -152,6 +152,8 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
 
         x[i][0] += dtf * v[i][0]; // half step
         x[i][1] += dtf * v[i][1];
+//      x[i][0] += dtv * v[i][0]; // full step
+//      x[i][1] += dtv * v[i][1];
 
         vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
           (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
