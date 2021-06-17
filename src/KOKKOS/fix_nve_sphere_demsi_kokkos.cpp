@@ -30,8 +30,8 @@ FixNVESphereDemsiKokkos<DeviceType>::FixNVESphereDemsiKokkos(LAMMPS *lmp, int na
   atomKK = (AtomKokkos *)atom;
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
 
-  datamask_read = F_MASK | TORQUE_MASK | RMASS_MASK | RADIUS_MASK | MASK_MASK | THICKNESS_MASK;
-  datamask_modify = X_MASK | V_MASK | OMEGA_MASK;
+  datamask_read = X_MASK | V_MASK| F_MASK | OMEGA_MASK | TORQUE_MASK | RMASS_MASK | RADIUS_MASK | MASK_MASK | THICKNESS_MASK;
+  datamask_modify = X_MASK | V_MASK | OMEGA_MASK | THICKNESS_MASK;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -84,6 +84,10 @@ void FixNVESphereDemsiKokkos<DeviceType>::initial_integrate(int vflag)
 
   FixNVESphereDemsiKokkosInitialIntegrateFunctor<DeviceType> f(this); 
   Kokkos::parallel_for(nlocal,f);
+
+  // debug
+  //atomKK->sync(Host,ALL_MASK);
+  //atomKK->modified(Host,ALL_MASK);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -129,6 +133,7 @@ template<class DeviceType>
 void FixNVESphereDemsiKokkos<DeviceType>::final_integrate()
 {
   atomKK->sync(execution_space,datamask_read);
+  //atomKK->sync(execution_space,ALL_MASK);
   atomKK->modified(execution_space,datamask_modify);
 
   v = atomKK->k_v.view<DeviceType>();
@@ -151,6 +156,13 @@ void FixNVESphereDemsiKokkos<DeviceType>::final_integrate()
 
   FixNVESphereDemsiKokkosFinalIntegrateFunctor<DeviceType> f(this);
   Kokkos::parallel_for(nlocal,f);
+
+  // debug
+ // atomKK->sync(Host,datamask_read);
+ // atomKK->modified(Host,datamask_modify);
+  //atomKK->sync(Host,ALL_MASK);
+ // atomKK->modified(Host,ALL_MASK);
+
 }
 
 /* ---------------------------------------------------------------------- */
