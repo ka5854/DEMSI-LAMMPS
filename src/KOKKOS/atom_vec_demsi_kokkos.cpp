@@ -1433,7 +1433,7 @@ int AtomVecDemsiKokkos::pack_comm_vel(int n, int *list, double *buf,
   double dx,dy,dz,dvx,dvy,dvz;
 
   if (radvary == 0) {
-    atomKK->sync(Host,X_MASK|V_MASK|OMEGA_MASK);
+    atomKK->sync(Host,X_MASK|V_MASK|OMEGA_MASK|VN_MASK); // adding vn
     m = 0;
     if (pbc_flag == 0) {
       for (i = 0; i < n; i++) {
@@ -1447,6 +1447,9 @@ int AtomVecDemsiKokkos::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = h_omega(j,0);
         buf[m++] = h_omega(j,1);
         buf[m++] = h_omega(j,2);
+        buf[m++] = h_vn(j,0);
+        buf[m++] = h_vn(j,1);
+        buf[m++] = h_vn(j,2);
       }
     } else {
       if (domain->triclinic == 0) {
@@ -1470,6 +1473,9 @@ int AtomVecDemsiKokkos::pack_comm_vel(int n, int *list, double *buf,
           buf[m++] = h_omega(j,0);
           buf[m++] = h_omega(j,1);
           buf[m++] = h_omega(j,2);
+          buf[m++] = h_vn(j,0);
+          buf[m++] = h_vn(j,1); // adding vn
+          buf[m++] = h_vn(j,2);
         }
       } else {
         dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
@@ -1492,12 +1498,15 @@ int AtomVecDemsiKokkos::pack_comm_vel(int n, int *list, double *buf,
           buf[m++] = h_omega(j,0);
           buf[m++] = h_omega(j,1);
           buf[m++] = h_omega(j,2);
+          buf[m++] = h_vn(j,0);
+          buf[m++] = h_vn(j,1); // adding vn
+          buf[m++] = h_vn(j,2);
         }
       }
     }
 
   } else {
-    atomKK->sync(Host,X_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK);
+    atomKK->sync(Host,X_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK|VN_MASK); // adding vn
     m = 0;
     if (pbc_flag == 0) {
       for (i = 0; i < n; i++) {
@@ -1513,6 +1522,9 @@ int AtomVecDemsiKokkos::pack_comm_vel(int n, int *list, double *buf,
         buf[m++] = h_omega(j,0);
         buf[m++] = h_omega(j,1);
         buf[m++] = h_omega(j,2);
+        buf[m++] = h_vn(j,0);
+        buf[m++] = h_vn(j,1); // adding vn
+        buf[m++] = h_vn(j,2);
       }
     } else {
       if (domain->triclinic == 0) {
@@ -1538,6 +1550,9 @@ int AtomVecDemsiKokkos::pack_comm_vel(int n, int *list, double *buf,
           buf[m++] = h_omega(j,0);
           buf[m++] = h_omega(j,1);
           buf[m++] = h_omega(j,2);
+          buf[m++] = h_vn(j,0);
+          buf[m++] = h_vn(j,1); // adding vn
+          buf[m++] = h_vn(j,2);
         }
       } else {
         dvx = pbc[0]*h_rate[0] + pbc[5]*h_rate[5] + pbc[4]*h_rate[4];
@@ -1562,6 +1577,10 @@ int AtomVecDemsiKokkos::pack_comm_vel(int n, int *list, double *buf,
           buf[m++] = h_omega(j,0);
           buf[m++] = h_omega(j,1);
           buf[m++] = h_omega(j,2);
+          buf[m++] = h_omega(j,2);
+          buf[m++] = h_vn(j,0);
+          buf[m++] = h_vn(j,1); // adding vn
+          buf[m++] = h_vn(j,2);
         }
       }
     }
@@ -1635,8 +1654,11 @@ void AtomVecDemsiKokkos::unpack_comm_vel(int n, int first, double *buf)
       h_omega(i,0) = buf[m++];
       h_omega(i,1) = buf[m++];
       h_omega(i,2) = buf[m++];
+      h_vn(i,0) = buf[m++];
+      h_vn(i,1) = buf[m++]; // adding vn
+      h_vn(i,2) = buf[m++];
     }
-    atomKK->modified(Host,X_MASK|V_MASK|OMEGA_MASK);
+    atomKK->modified(Host,X_MASK|V_MASK|OMEGA_MASK|VN_MASK); // adding vn
   } else {
     int m = 0;
     const int last = first + n;
@@ -1652,8 +1674,11 @@ void AtomVecDemsiKokkos::unpack_comm_vel(int n, int first, double *buf)
       h_omega(i,0) = buf[m++];
       h_omega(i,1) = buf[m++];
       h_omega(i,2) = buf[m++];
+      h_vn(i,0) = buf[m++];
+      h_vn(i,1) = buf[m++]; // adding vn
+      h_vn(i,2) = buf[m++];
     }
-    atomKK->modified(Host,X_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK);
+    atomKK->modified(Host,X_MASK|RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK|VN_MASK); // adding vn
   }
 }
 
@@ -1684,7 +1709,7 @@ int AtomVecDemsiKokkos::unpack_comm_hybrid(int n, int first, double *buf)
 int AtomVecDemsiKokkos::pack_reverse(int n, int first, double *buf)
 {
   if(n > 0)
-    atomKK->sync(Host,F_MASK|TORQUE_MASK);
+    atomKK->sync(Host,F_MASK|TORQUE_MASK|VN_MASK); // adding vn
 
   int m = 0;
   const int last = first + n;
@@ -1695,6 +1720,9 @@ int AtomVecDemsiKokkos::pack_reverse(int n, int first, double *buf)
     buf[m++] = h_torque(i,0);
     buf[m++] = h_torque(i,1);
     buf[m++] = h_torque(i,2);
+    buf[m++] = h_vn(i,0);
+    buf[m++] = h_vn(i,1);
+    buf[m++] = h_vn(i,2);
   }
   return m;
 }
@@ -1721,7 +1749,7 @@ int AtomVecDemsiKokkos::pack_reverse_hybrid(int n, int first, double *buf)
 void AtomVecDemsiKokkos::unpack_reverse(int n, int *list, double *buf)
 {
   if(n > 0) {
-    atomKK->modified(Host,F_MASK|TORQUE_MASK);
+    atomKK->modified(Host,F_MASK|TORQUE_MASK|VN_MASK); // adding vn
   }
 
   int m = 0;
@@ -1733,6 +1761,9 @@ void AtomVecDemsiKokkos::unpack_reverse(int n, int *list, double *buf)
     h_torque(j,0) += buf[m++];
     h_torque(j,1) += buf[m++];
     h_torque(j,2) += buf[m++];
+    h_vn(j,0) += buf[m++];
+    h_vn(j,1) += buf[m++]; // adding vn
+    h_vn(j,2) += buf[m++];
   }
 }
 
@@ -2772,7 +2803,7 @@ void AtomVecDemsiKokkos::unpack_border_kokkos(const int &n, const int &first,
 
   atomKK->modified(space,X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|
 	         RADIUS_MASK|RMASS_MASK|FORCING_MASK|
-                 THICKNESS_MASK);
+                 THICKNESS_MASK|VN_MASK); // adding vn
 }
 
 /* ---------------------------------------------------------------------- */
@@ -2809,7 +2840,7 @@ void AtomVecDemsiKokkos::unpack_border(int n, int first, double *buf)
     h_bvector(i,0) = buf[m++];
     h_bvector(i,1) = buf[m++];
     h_vn(i,0) = buf[m++];
-    h_vn(i,1) = buf[m++];
+    h_vn(i,1) = buf[m++]; // adding vn
     h_vn(i,2) = buf[m++];
   }
 
@@ -2819,7 +2850,7 @@ void AtomVecDemsiKokkos::unpack_border(int n, int first, double *buf)
         unpack_border(n,first,&buf[m]);
 
   atomKK->modified(Host,X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|RADIUS_MASK|RMASS_MASK|
-                FORCING_MASK|THICKNESS_MASK);
+                FORCING_MASK|THICKNESS_MASK|VN_MASK); // adding vn
 }
 
 /* ---------------------------------------------------------------------- */
@@ -3008,7 +3039,7 @@ void AtomVecDemsiKokkos::unpack_border_vel_kokkos(
 
   atomKK->modified(space,X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|
                  RADIUS_MASK|RMASS_MASK|V_MASK|OMEGA_MASK|
-                 THICKNESS_MASK|FORCING_MASK);
+                 THICKNESS_MASK|FORCING_MASK|VN_MASK); // adding vn
 }
 
 /* ---------------------------------------------------------------------- */
@@ -3061,7 +3092,7 @@ void AtomVecDemsiKokkos::unpack_border_vel(int n, int first, double *buf)
         unpack_border(n,first,&buf[m]);
 
   atomKK->modified(Host,X_MASK|TAG_MASK|TYPE_MASK|MASK_MASK|RADIUS_MASK|RMASS_MASK|
-                V_MASK|OMEGA_MASK|FORCING_MASK|THICKNESS_MASK);
+                V_MASK|OMEGA_MASK|FORCING_MASK|THICKNESS_MASK|VN_MASK); // adding vn
 }
 
 /* ---------------------------------------------------------------------- */
@@ -3346,7 +3377,7 @@ int AtomVecDemsiKokkos::pack_exchange_kokkos(const int &nsend,DAT::tdual_xfloat_
   atomKK->sync(space,X_MASK | V_MASK | TAG_MASK | TYPE_MASK |
              MASK_MASK | IMAGE_MASK| RADIUS_MASK | RMASS_MASK |
              OMEGA_MASK | THICKNESS_MASK | FORCING_MASK | 
-             BOND_MASK | SPECIAL_MASK);
+             BOND_MASK | SPECIAL_MASK | VN_MASK); // adding vn
 
   if(space == Host) {
     AtomVecDemsiKokkos_PackExchangeFunctor<LMPHostType> f(atomKK,k_buf,k_sendlist,k_copylist,atom->nlocal,dim,lo,hi);
@@ -3370,7 +3401,7 @@ int AtomVecDemsiKokkos::pack_exchange(int i, double *buf)
   atomKK->sync(Host,X_MASK | V_MASK | TAG_MASK | TYPE_MASK |
             MASK_MASK | IMAGE_MASK| RADIUS_MASK | RMASS_MASK |
             OMEGA_MASK | FORCING_MASK | THICKNESS_MASK | 
-            BOND_MASK | SPECIAL_MASK);
+            BOND_MASK | SPECIAL_MASK | VN_MASK); // adding vn
 
   int m = 1;
   buf[m++] = h_x(i,0);
@@ -3597,7 +3628,7 @@ int AtomVecDemsiKokkos::unpack_exchange_kokkos(DAT::tdual_xfloat_2d &k_buf,int n
   atomKK->modified(space,X_MASK | V_MASK | TAG_MASK | TYPE_MASK |
                  MASK_MASK | IMAGE_MASK| RADIUS_MASK | RMASS_MASK |
                  OMEGA_MASK | THICKNESS_MASK | FORCING_MASK |
-                 BOND_MASK | SPECIAL_MASK);
+                 BOND_MASK | SPECIAL_MASK | VN_MASK); // adding vn
 
 
   return k_count.h_view(0);
@@ -3671,7 +3702,7 @@ int AtomVecDemsiKokkos::unpack_exchange(double *buf)
   atomKK->modified(Host,X_MASK | V_MASK | TAG_MASK | TYPE_MASK |
            MASK_MASK | IMAGE_MASK | RADIUS_MASK | RMASS_MASK |
            OMEGA_MASK | FORCING_MASK | THICKNESS_MASK | 
-           BOND_MASK | SPECIAL_MASK);
+           BOND_MASK | SPECIAL_MASK | VN_MASK);
 
   atom->nlocal++;
   return m;
@@ -3935,6 +3966,9 @@ void AtomVecDemsiKokkos::data_atom(double *coord, imageint imagetmp, char **valu
   h_omega(nlocal,0) = 0.0;
   h_omega(nlocal,1) = 0.0;
   h_omega(nlocal,2) = 0.0;
+  h_vn(nlocal,0) = 0.0;
+  h_vn(nlocal,1) = 0.0; // adding vn, just in case...
+  h_vn(nlocal,2) = 0.0;
 
   h_forcing(nlocal,0) = 0.0;
   h_forcing(nlocal,1) = 0.0;
@@ -3984,6 +4018,9 @@ void AtomVecDemsiKokkos::data_vel(int m, char **values)
   h_v(m,0) = utils::numeric(FLERR,values[0],true,lmp);
   h_v(m,1) = utils::numeric(FLERR,values[1],true,lmp);
   h_v(m,2) = utils::numeric(FLERR,values[2],true,lmp);
+  h_vn(m,0) = utils::numeric(FLERR,values[0],true,lmp);
+  h_vn(m,1) = utils::numeric(FLERR,values[1],true,lmp); // adding vn = v
+  h_vn(m,2) = utils::numeric(FLERR,values[2],true,lmp);
   h_omega(m,0) = utils::numeric(FLERR,values[3],true,lmp);
   h_omega(m,1) = utils::numeric(FLERR,values[4],true,lmp);
   h_omega(m,2) = utils::numeric(FLERR,values[5],true,lmp);
@@ -4086,6 +4123,9 @@ void AtomVecDemsiKokkos::pack_vel(double **buf)
     buf[i][4] = h_omega(i,0);
     buf[i][5] = h_omega(i,1);
     buf[i][6] = h_omega(i,2);
+    buf[i][7] = h_vn(i,0);
+    buf[i][8] = h_vn(i,1); // adding vn
+    buf[i][9] = h_vn(i,2);
   }
 }
 
@@ -4338,6 +4378,8 @@ void AtomVecDemsiKokkos::sync_overlapping_device(ExecutionSpace space, unsigned 
       perform_async_copy<DAT::tdual_x_array>(atomKK->k_x,space);
     if ((mask & V_MASK) && atomKK->k_v.need_sync<LMPHostType>())
       perform_async_copy<DAT::tdual_v_array>(atomKK->k_v,space);
+    if ((mask & VN_MASK) && atomKK->k_vn.need_sync<LMPHostType>())
+      perform_async_copy<DAT::tdual_v_array>(atomKK->k_vn,space); // adding vn
     if ((mask & F_MASK) && atomKK->k_f.need_sync<LMPHostType>())
       perform_async_copy<DAT::tdual_f_array>(atomKK->k_f,space);
     if ((mask & TAG_MASK) && atomKK->k_tag.need_sync<LMPHostType>())
@@ -4358,6 +4400,7 @@ void AtomVecDemsiKokkos::sync_overlapping_device(ExecutionSpace space, unsigned 
       perform_async_copy<DAT::tdual_f_array>(atomKK->k_torque,space);
     if ((mask & FORCING_MASK) && atomKK->k_forcing.need_sync<LMPHostType>())
       perform_async_copy<DAT::tdual_float_2d>(atomKK->k_forcing,space);
+
     if (mask & THICKNESS_MASK) {
         if (atomKK->k_orientation.need_sync<LMPHostType>())
            perform_async_copy<DAT::tdual_float_1d>(atomKK->k_orientation,space);
@@ -4385,8 +4428,8 @@ void AtomVecDemsiKokkos::sync_overlapping_device(ExecutionSpace space, unsigned 
            perform_async_copy<DAT::tdual_float_2d>(atomKK->k_ocean_vel,space);
         if (atomKK->k_bvector.need_sync<LMPHostType>())
            perform_async_copy<DAT::tdual_float_2d>(atomKK->k_bvector,space);
-        if (atomKK->k_vn.need_sync<LMPHostType>())
-           perform_async_copy<DAT::tdual_v_array>(atomKK->k_vn,space); // adding vn
+//      if (atomKK->k_vn.need_sync<LMPHostType>())
+//         perform_async_copy<DAT::tdual_v_array>(atomKK->k_vn,space); // adding vn
     }
     if (mask & SPECIAL_MASK) {
       if (atomKK->k_nspecial.need_sync<LMPHostType>())
@@ -4413,6 +4456,7 @@ void AtomVecDemsiKokkos::modified(ExecutionSpace space, unsigned int mask)
     if (mask & X_MASK) atomKK->k_x.modify<LMPDeviceType>();
     if (mask & V_MASK) atomKK->k_v.modify<LMPDeviceType>();
     if (mask & F_MASK) atomKK->k_f.modify<LMPDeviceType>();
+    if (mask & VN_MASK) atomKK->k_vn.modify<LMPDeviceType>();
     if (mask & TAG_MASK) atomKK->k_tag.modify<LMPDeviceType>();
     if (mask & TYPE_MASK) atomKK->k_type.modify<LMPDeviceType>();
     if (mask & MASK_MASK) atomKK->k_mask.modify<LMPDeviceType>();
@@ -4436,7 +4480,7 @@ void AtomVecDemsiKokkos::modified(ExecutionSpace space, unsigned int mask)
         atomKK->k_coriolis.modify<LMPDeviceType>();
         atomKK->k_ocean_vel.modify<LMPDeviceType>();
         atomKK->k_bvector.modify<LMPDeviceType>();
-        atomKK->k_vn.modify<LMPDeviceType>(); // adding vn
+//      atomKK->k_vn.modify<LMPDeviceType>(); // adding vn
     }
     if (mask & BOND_MASK) {
         atomKK->k_num_bond.modify<LMPDeviceType>();
@@ -4451,6 +4495,7 @@ void AtomVecDemsiKokkos::modified(ExecutionSpace space, unsigned int mask)
     if (mask & X_MASK) atomKK->k_x.modify<LMPHostType>();
     if (mask & V_MASK) atomKK->k_v.modify<LMPHostType>();
     if (mask & F_MASK) atomKK->k_f.modify<LMPHostType>();
+    if (mask & VN_MASK) atomKK->k_vn.modify<LMPHostType>(); // adding vn
     if (mask & TAG_MASK) atomKK->k_tag.modify<LMPHostType>();
     if (mask & TYPE_MASK) atomKK->k_type.modify<LMPHostType>();
     if (mask & MASK_MASK) atomKK->k_mask.modify<LMPHostType>();
@@ -4474,7 +4519,7 @@ void AtomVecDemsiKokkos::modified(ExecutionSpace space, unsigned int mask)
         atomKK->k_coriolis.modify<LMPHostType>();
         atomKK->k_ocean_vel.modify<LMPHostType>();
         atomKK->k_bvector.modify<LMPHostType>();
-        atomKK->k_vn.modify<LMPHostType>(); // adding vn
+//      atomKK->k_vn.modify<LMPHostType>(); // adding vn
     }
     if (mask & BOND_MASK) {
         atomKK->k_num_bond.modify<LMPHostType>();

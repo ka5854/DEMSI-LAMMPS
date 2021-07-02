@@ -39,6 +39,9 @@ class FixNVESphereDemsi : public FixNVE {
   
   // control flag, sent to fix_integrator in demsi_external_force.cpp
   int timeIntegrationFlag;
+  
+  // elastic CFL, sent to fix_integrator in demsi_external_force.cpp
+  int bulkCFL;
 
  protected:
   double inertia;

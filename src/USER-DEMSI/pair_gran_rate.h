@@ -67,7 +67,7 @@ protected:
 */
   const double OverLap = 1.050075135808664;   // R^\prime/R = \sqrt(2\sqrt(3) \slash \pi)
   const double LapOver = 0.9523128068639574;  // R/R^\prime = \sqrt(\pi \slash 2\sqrt(3))
-  const double rho0 = 950.;  // kg/m^3
+  const double rho0 = 900.;  // kg/m^3
   const double MY_PI3 = 1.0471975511965976; // pi/3
 };
 

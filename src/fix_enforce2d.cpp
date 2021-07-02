@@ -120,12 +120,13 @@ void FixEnforce2D::post_force(int /*vflag*/)
 
   for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
-      v[i][2] = 0.0;
+//    v[i][2] = 0.0;
       f[i][2] = 0.0;
     }
 
   // for systems with omega/angmom/torque, zero x and y components
 
+/*
   if (atom->omega_flag) {
     double **omega = atom->omega;
     for (int i = 0; i < nlocal; i++)
@@ -134,6 +135,7 @@ void FixEnforce2D::post_force(int /*vflag*/)
         omega[i][1] = 0.0;
       }
   }
+*/
 
   if (atom->angmom_flag) {
     double **angmom = atom->angmom;

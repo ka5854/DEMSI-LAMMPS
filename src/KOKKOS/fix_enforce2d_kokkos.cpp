@@ -140,23 +140,25 @@ KOKKOS_INLINE_FUNCTION
 void FixEnforce2DKokkos<DeviceType>::post_force_item( int i ) const
 {
   if (mask[i] & groupbit) {
-    v(i,2) = 0.0;
+//  v(i,2) = 0.0;
     f(i,2) = 0.0;
 
+/*
     if (omega_flag) {
       omega(i,0) = 0.0;
       omega(i,1) = 0.0;
     }
-
+*/
     if (angmom_flag) {
       angmom(i,0) = 0.0;
       angmom(i,1) = 0.0;
     }
-
+/*
     if (torque_flag) {
       torque(i,0) = 0.0;
       torque(i,1) = 0.0;
     }
+*/
   }
 }
 
