@@ -43,6 +43,8 @@ class FixNVESphereDemsi : public FixNVE {
   // elastic CFL, sent to fix_integrator in demsi_external_force.cpp
   int bulkCFL;
 
+  const double MY_PI  = 3.14159265358979323846; // pi
+  
  protected:
   double inertia;
 
