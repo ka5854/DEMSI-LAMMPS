@@ -34,10 +34,11 @@ public:
   virtual void transfer_history(double*, double*);
   double init_one(int, int);
 protected:
-  void compute_rate_exverlet();
-  void compute_rate_explicit();
-  void compute_rate_implicit();
-  void load_new_forces();
+  void compute_rate_exverlet(int);
+  void compute_rate_explicit0(int);
+  void compute_rate_explicit(int);
+  void compute_rate_implicit(int);
+  void load_new_forces(int);
 
   void allocate();
 
@@ -48,6 +49,7 @@ protected:
   double       shearYieldStress;
   double compressiveYieldStress;
   double  tensileFractureStress;
+  double  ultimateTensileStrain;
   double timeIntegrationFlag;
   double bulkCFL;
   
