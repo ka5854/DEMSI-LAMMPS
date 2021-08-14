@@ -34,6 +34,7 @@ public:
   virtual void transfer_history(double*, double*);
   double init_one(int, int);
 protected:
+  void compute_TV_Transport(int);
   void compute_rate_exverlet(int);
   void compute_rate_explicit0(int);
   void compute_rate_explicit(int);

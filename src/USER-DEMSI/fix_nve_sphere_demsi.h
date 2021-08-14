@@ -46,6 +46,8 @@ class FixNVESphereDemsi : public FixNVE {
   const double rho0 = 900.;  // kg/m^3
   const double MY_PI  = 3.14159265358979323846; // pi
 
+ protected:
+  double inertia;
 };
 
 }
