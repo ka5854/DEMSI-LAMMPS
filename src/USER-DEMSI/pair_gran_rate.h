@@ -36,7 +36,6 @@ public:
 protected:
   void compute_TV_Transport(int);
   void compute_rate_exverlet(int);
-  void compute_rate_explicit0(int);
   void compute_rate_explicit(int);
   void compute_rate_implicit(int);
   void load_new_forces(int);

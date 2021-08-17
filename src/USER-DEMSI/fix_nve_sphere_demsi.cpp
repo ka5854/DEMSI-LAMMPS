@@ -149,9 +149,9 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
       } // end if (mask[i] & groupbit)
 
       if (!(mask[i]&groupbit)){
-           vn[i][0] =    vn[i][1] =    vn[i][2] = 0.;
-            v[i][0] =     v[i][1] =     v[i][2] = 0.;
-        omega[i][0] = omega[i][1] = omega[i][2] = 0.;
+            vn[i][0] =     vn[i][1] =     vn[i][2] = 0.;
+        torque[i][0] = torque[i][1] = torque[i][2] = 0.;
+         omega[i][0] =  omega[i][1] =  omega[i][2] = 0.;
       }
 
     } // end for (int i = 0; i < nlocal; i++)
@@ -180,8 +180,8 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
         v[i][0] = detinv*( a11*b0 - a01*b1);
         v[i][1] = detinv*(-a10*b0 + a00*b1);
 
-        x[i][0] += dtv * v[i][0];
-        x[i][1] += dtv * v[i][1];
+        x[i][0] += dtf * vn[i][0]; // half step with time(n) vel
+        x[i][1] += dtf * vn[i][1];
 
         dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
         omega[i][2] += dtirotate * torque[i][2];
@@ -189,9 +189,10 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
       } // end if (mask[i] & groupbit)
 
       if (!(mask[i]&groupbit)){
-           vn[i][0] =    vn[i][1] =    vn[i][2] = 0.;
-            v[i][0] =     v[i][1] =     v[i][2] = 0.;
-        omega[i][0] = omega[i][1] = omega[i][2] = 0.;
+             v[i][0] =      v[i][1] =      v[i][2] = 0.;
+            vn[i][0] =     vn[i][1] =     vn[i][2] = 0.;
+        torque[i][0] = torque[i][1] = torque[i][2] = 0.;
+         omega[i][0] =  omega[i][1] =  omega[i][2] = 0.;
       }
  
     } // end for (int i = 0; i < nlocal; i++)
@@ -220,8 +221,8 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
         v[i][0] = detinv*( a11*b0 - a01*b1);
         v[i][1] = detinv*(-a10*b0 + a00*b1);
 
-        x[i][0] += dtv * v[i][0];
-        x[i][1] += dtv * v[i][1];
+        x[i][0] += dtf * vn[i][0]; // half step with time(n) vel
+        x[i][1] += dtf * vn[i][1];
 
         dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
         omega[i][2] += dtirotate * torque[i][2];
@@ -229,9 +230,9 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
       } // end if (mask[i] & groupbit)
 
       if (!(mask[i]&groupbit)){
-           vn[i][0] =    vn[i][1] =    vn[i][2] = 0.;
-            v[i][0] =     v[i][1] =     v[i][2] = 0.;
-        omega[i][0] = omega[i][1] = omega[i][2] = 0.;
+            vn[i][0] =     vn[i][1] =     vn[i][2] = 0.;
+        torque[i][0] = torque[i][1] = torque[i][2] = 0.;
+         omega[i][0] =  omega[i][1] =  omega[i][2] = 0.;
       }
  
     } // end for (int i = 0; i < nlocal; i++)
@@ -316,9 +317,9 @@ void FixNVESphereDemsi::final_integrate()
     } // end for (int i = 0; i < nlocal; i++) 
 
     for (int i = 0; i < atom->nlocal; i++) {
-        vn[i][0] = omega[i][0]; // integral dLogV
-        vn[i][1] = omega[i][1]; // integral dLogS
-        vn[i][2] =     v[i][2]; // dMach
+        vn[i][0] =  omega[i][0]; // integral dLogV
+        vn[i][1] =  omega[i][1]; // integral dLogS
+        vn[i][2] = torque[i][0]; // dMach
     } // end for (int i = 0; i < atom->nlocal; i++)
   
   } else if (timeIntegrationFlag == 1) { // Explicit Rate form
@@ -331,9 +332,9 @@ void FixNVESphereDemsi::final_integrate()
             v[i][1] = vn[i][1];
         omega[i][2] = vn[i][2];
 
-        // half step displacement
-//          x[i][0] += dtf*v[i][0];
-//          x[i][1] += dtf*v[i][1];
+        // half step displacement with time(n+1) vel
+            x[i][0] += dtf*v[i][0];
+            x[i][1] += dtf*v[i][1];
 
         rke += (omega[i][2]*omega[i][2])*radius[i]*radius[i]*rmass[i];
 
@@ -344,7 +345,7 @@ void FixNVESphereDemsi::final_integrate()
       if(atom->type[i] != 1) continue;
         vn[i][0] = omega[i][0]; // integral dLogV
         vn[i][1] = omega[i][1]; // integral dLogS
-        vn[i][2] =     v[i][2]; //dMach
+        vn[i][2] =torque[i][2]; // dMach
     } // end for (int i = 0; i < atom->nlocal; i++)
 
   } else if (timeIntegrationFlag == 2) { // Implicit Rate form
@@ -357,9 +358,9 @@ void FixNVESphereDemsi::final_integrate()
             v[i][1] = vn[i][1];
         omega[i][2] = vn[i][2];
 
-        // half step displacement
-//          x[i][0] += dtf*v[i][0];
-//          x[i][1] += dtf*v[i][1];
+        // half step displacement with time(n+1) vel
+           x[i][0] += dtf*v[i][0];
+           x[i][1] += dtf*v[i][1];
 
         rke += (omega[i][2]*omega[i][2])*radius[i]*radius[i]*rmass[i];
 
@@ -368,9 +369,9 @@ void FixNVESphereDemsi::final_integrate()
 
     for (int i = 0; i < atom->nlocal; i++) {
       if(atom->type[i] != 1) continue;
-        vn[i][0] = omega[i][0]; // integral dLogV
-        vn[i][1] = omega[i][1]; // integral dLogS
-        vn[i][2] =     v[i][2]; // dmach
+        vn[i][0] =  omega[i][0]; // integral dLogV
+        vn[i][1] =  omega[i][1]; // integral dLogS
+        vn[i][2] = torque[i][0]; // dMach
     } // end for (int i = 0; i < atom->nlocal; i++)
 
   } else {

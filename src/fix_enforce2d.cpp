@@ -120,7 +120,7 @@ void FixEnforce2D::post_force(int /*vflag*/)
 
   for (int i = 0; i < nlocal; i++)
     if (mask[i] & groupbit) {
-//    v[i][2] = 0.0;
+      v[i][2] = 0.0;
       f[i][2] = 0.0;
     }
 
@@ -146,6 +146,7 @@ void FixEnforce2D::post_force(int /*vflag*/)
       }
   }
 
+/*
   if (atom->torque_flag) {
     double **torque = atom->torque;
     for (int i = 0; i < nlocal; i++)
@@ -154,6 +155,7 @@ void FixEnforce2D::post_force(int /*vflag*/)
         torque[i][1] = 0.0;
       }
   }
+*/
 
   // invoke other fixes that enforce 2d
   // fix rigid variants
