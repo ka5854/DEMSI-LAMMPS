@@ -52,6 +52,7 @@ protected:
   double  ultimateTensileStrain;
   double timeIntegrationFlag;
   double bulkCFL;
+  double UseTVTransport;
   
 /*! math_const.h
   static const double THIRD  = 1.0/3.0;
