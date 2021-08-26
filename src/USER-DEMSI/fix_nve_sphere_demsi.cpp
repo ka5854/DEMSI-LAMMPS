@@ -96,137 +96,63 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
   double **vn = atom->vn; // adding vn
   double *mean_thickness = atom->mean_thickness;
 
-  double D, vel_diff, m_prime;
-  double a00, a01, a10, a11;
-  double detinv;
-  double b0, b1;
-  double det;
-
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
   // set timestep here since dt may have changed or come via rRESPA
-
   double dtv = update->dt;
   double dtf = 0.5*dtv;
-    double dtfrotate = dtf / inertia;
-    double dtirotate;
-    // update v,x,omega for all particles
-    // d_omega/dt = torque / inertia
-  double elastic_wavespeed = sqrt(bulkModulus/rho0) + sqrt(shearModulus/rho0);
-
-  if (timeIntegrationFlag == 0) { // Explicit Verlet form
 
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
 
-        vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
-          (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
-        D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
-        m_prime = rmass[i]/dtf;
-        a00 = a11 = m_prime+D;
-        a10 = rmass[i]*coriolis[i];
-        a01 = -a10;
+        vn[i][0] =     v[i][0];
+        vn[i][1] =     v[i][1];
+        vn[i][2] = omega[i][2];
 
-        b0 = m_prime*v[i][0] + f[i][0] + bvector[i][0] + forcing[i][0] + D*ocean_vel[i][0];
-        b1 = m_prime*v[i][1] + f[i][1] + bvector[i][1] + forcing[i][1] + D*ocean_vel[i][1];
+        // half step acceleration with time(n) forces
+        double dtm = dtf/rmass[i];
+        double radi = radius[i];
+        double dvx = dtm*f[i][0];
+        double dvy = dtm*f[i][1];
+        double dvz = dtm*torque[i][2]/(0.5*radi*radi);
 
-        detinv = 1.0/(a00*a11 - a01*a10);
-        v[i][0] = detinv*( a11*b0 - a01*b1);
-        v[i][1] = detinv*(-a10*b0 + a00*b1);
+        // add the drag, tilt, and forcing
+        double vpx = v[i][0] + dvx + dtm*(bvector[i][0] + forcing[i][0]);
+        double vpy = v[i][1] + dvy + dtm*(bvector[i][1] + forcing[i][1]);
 
-        x[i][0] += dtv * v[i][0];
+        // add acceleration due to ocean drag
+        double ovx = ocean_vel[i][0];
+        double ovy = ocean_vel[i][1];
+        double wx = ovx - vpx;
+        double wy = ovy - vpy;
+
+        // get the exchange matrix A = {{1+a,-a},{-b,1+b}}
+        double ice_volume = ice_area[i]*mean_thickness[i];
+        double ice_density = rmass[i]/ice_volume;
+        double D12 = ocean_density*ocean_drag*sqrt(wx*wx + wy*wy)*ice_area[i];
+        double a = D12*dtf/(ice_density*ice_volume);
+
+        // one-way coupling
+        vpx = (vpx + a*ovx)/(1. + a); // one-way coupling
+        vpy = (vpy + a*ovy)/(1. + a);
+
+        // two-way coupling
+//      double b = D12*dtf/(ocean_density*ice_volume);
+//      vpx = ((1. + b)*vpx + a*ovx)/(1. + a + b);
+//      vpy = ((1. + b)*vpy + a*ovy)/(1. + a + b);
+
+        // half step coriolis acceleration
+        double cdt = coriolis[i]*dtf;
+        double den = 1. + cdt*cdt;
+            v[i][0] = (vpx + cdt*vpy)/den;
+            v[i][1] = (vpy - cdt*vpx)/den;
+        omega[i][2] = omega[i][2] + dvz;
+
+        x[i][0] += dtv * v[i][0];  // full step with explicit vel
         x[i][1] += dtv * v[i][1];
 
-        dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
-        omega[i][2] += dtirotate * torque[i][2];
-
-        vn[i][0] =     v[i][0];
-        vn[i][1] =     v[i][1];
-        vn[i][2] = omega[i][2];
-
-      } // end if (mask[i] & groupbit)
-
-      if (!(mask[i]&groupbit)){
-            vn[i][0] =     vn[i][1] =     vn[i][2] = 0.;
-        torque[i][0] = torque[i][1] = torque[i][2] = 0.;
-         omega[i][0] =  omega[i][1] =  omega[i][2] = 0.;
-      }
-
-    } // end for (int i = 0; i < nlocal; i++)
-
-  } else if (timeIntegrationFlag == 1) { // Explicit Rate form
-
-    for (int i = 0; i < nlocal; i++) {
-      if (mask[i] & groupbit) {
-
-        vn[i][0] =     v[i][0];
-        vn[i][1] =     v[i][1];
-        vn[i][2] = omega[i][2];
-
-        vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
-          (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
-        D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
-        m_prime = rmass[i]/dtv;
-        a00 = a11 = m_prime+D;
-        a10 = rmass[i]*coriolis[i];
-        a01 = -a10;
-
-        b0 = m_prime*v[i][0] + f[i][0] + bvector[i][0] + forcing[i][0] + D*ocean_vel[i][0];
-        b1 = m_prime*v[i][1] + f[i][1] + bvector[i][1] + forcing[i][1] + D*ocean_vel[i][1];
-
-        detinv = 1.0/(a00*a11 - a01*a10);
-        v[i][0] = detinv*( a11*b0 - a01*b1);
-        v[i][1] = detinv*(-a10*b0 + a00*b1);
-
-        x[i][0] += dtf * vn[i][0]; // half step with time(n) vel
-        x[i][1] += dtf * vn[i][1];
-
-        dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
-        omega[i][2] += dtirotate * torque[i][2];
-
-      } // end if (mask[i] & groupbit)
-
-      if (!(mask[i]&groupbit)){
-             v[i][0] =      v[i][1] =      v[i][2] = 0.;
-            vn[i][0] =     vn[i][1] =     vn[i][2] = 0.;
-        torque[i][0] = torque[i][1] = torque[i][2] = 0.;
-         omega[i][0] =  omega[i][1] =  omega[i][2] = 0.;
-      }
- 
-    } // end for (int i = 0; i < nlocal; i++)
-    
-  } else if (timeIntegrationFlag == 2) { // Implicit Rate form
-
-    for (int i = 0; i < nlocal; i++) {
-      if (mask[i] & groupbit) {
-
-        vn[i][0] =     v[i][0];
-        vn[i][1] =     v[i][1];
-        vn[i][2] = omega[i][2];
-
-        vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
-          (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
-        D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
-        m_prime = rmass[i]/dtv;
-        a00 = a11 = m_prime+D;
-        a10 = rmass[i]*coriolis[i];
-        a01 = -a10;
-
-        b0 = m_prime*v[i][0] + f[i][0] + bvector[i][0] + forcing[i][0] + D*ocean_vel[i][0];
-        b1 = m_prime*v[i][1] + f[i][1] + bvector[i][1] + forcing[i][1] + D*ocean_vel[i][1];
-
-        detinv = 1.0/(a00*a11 - a01*a10);
-        v[i][0] = detinv*( a11*b0 - a01*b1);
-        v[i][1] = detinv*(-a10*b0 + a00*b1);
-
-        x[i][0] += dtf * vn[i][0]; // half step with time(n) vel
-        x[i][1] += dtf * vn[i][1];
-
-        dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
-        omega[i][2] += dtirotate * torque[i][2];
-
       } // end if (mask[i] & groupbit)
 
       if (!(mask[i]&groupbit)){
@@ -236,9 +162,7 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
       }
  
     } // end for (int i = 0; i < nlocal; i++)
-  } else {
-    error->all(FLERR,"int(timeIntegrationFlag) must be (0,1,2)");
-  }
+
 } // end void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
 /* ---------------------------------------------------------------------- */
 
@@ -249,6 +173,7 @@ void FixNVESphereDemsi::final_integrate()
   double **f = atom->f;
   double **omega = atom->omega;
   double **torque = atom->torque;
+  double *radius = atom->radius;
   double *rmass = atom->rmass;
   double *ice_area = atom->ice_area;
   double *coriolis = atom->coriolis;
@@ -258,32 +183,13 @@ void FixNVESphereDemsi::final_integrate()
   double **vn = atom->vn; // adding vn
   double *mean_thickness = atom->mean_thickness;
 
-  double *radius = atom->radius;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
-  double D, vel_diff, m_prime;
-  double a00, a01, a10, a11;
-  double detinv;
-  double b0, b1;
-  double det;
-
   // set timestep here since dt may have changed or come via rRESPA
-
   double dtv = update->dt;
   double dtf = 0.5*dtv;
-
-  double elastic_wavespeed = sqrt(bulkModulus/rho0) + sqrt(shearModulus/rho0);
-
-  if (timeIntegrationFlag == 0) { // Explicit Verlet form
-
-    // set timestep here since dt may have changed or come via rRESPA
-
-    double dtfrotate = dtf / inertia;
-    double dtirotate;
-    // update v,x,omega for all particles
-    // d_omega/dt = torque / inertia
 
     double rke = 0.0;
     for (int i = 0; i < nlocal; i++) {
@@ -293,90 +199,62 @@ void FixNVESphereDemsi::final_integrate()
             v[i][1] = vn[i][1];
         omega[i][2] = vn[i][2];
 
-        vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
-          (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
-        D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
-        m_prime = rmass[i]/dtf;
-        a00 = a11 = m_prime+D;
-        a10 = rmass[i]*coriolis[i];
-        a01 = -a10;
+        // half step acceleration with time(n) forces
+        double dtm = dtf/rmass[i];
+        double radi = radius[i];
+        double dvx = dtm*f[i][0];
+        double dvy = dtm*f[i][1];
+        double dvz = dtm*torque[i][2]/(0.5*radi*radi);
 
-        b0 = m_prime*v[i][0] + f[i][0] + bvector[i][0] + forcing[i][0] + D*ocean_vel[i][0];
-        b1 = m_prime*v[i][1] + f[i][1] + bvector[i][1] + forcing[i][1] + D*ocean_vel[i][1];
+        // add the wind, tilt, and forcing
+        double vpx = v[i][0] + dvx + dtm*(bvector[i][0] + forcing[i][0]);
+        double vpy = v[i][1] + dvy + dtm*(bvector[i][1] + forcing[i][1]);
 
-        detinv = 1.0/(a00*a11 - a01*a10);
-        v[i][0] = detinv*( a11*b0 - a01*b1);
-        v[i][1] = detinv*(-a10*b0 + a00*b1);
+        // add acceleration due to ocean drag
+        double ovx = ocean_vel[i][0];
+        double ovy = ocean_vel[i][1];
+        double wx = ovx - vpx;
+        double wy = ovy - vpy;
 
-        dtirotate = dtfrotate / (radius[i]*radius[i]*rmass[i]);
-        omega[i][2] += dtirotate * torque[i][2];
+        // get the exchange matrix A = {{1+a,-a},{-b,1+b}}
+        double ice_volume = ice_area[i]*mean_thickness[i];
+        double ice_density = rmass[i]/ice_volume;
+        double D12 = ocean_density*ocean_drag*sqrt(wx*wx + wy*wy)*ice_area[i];
+        double a = D12*dtf/(ice_density*ice_volume);
 
-        rke += (omega[i][2]*omega[i][2])*radius[i]*radius[i]*rmass[i];
+        // one-way coupling
+        vpx = (vpx + a*ovx)/(1. + a); // one-way coupling
+        vpy = (vpy + a*ovy)/(1. + a);
+
+        // two-way coupling
+//      double b = D12*dtf/(ocean_density*ice_volume);
+//      vpx = ((1. + b)*vpx + a*ovx)/(1. + a + b);
+//      vpy = ((1. + b)*vpy + a*ovy)/(1. + a + b);
+
+        // half step coriolis acceleration
+        double cdt = coriolis[i]*dtf;
+        double den = 1. + cdt*cdt;
+            v[i][0] = (vpx + cdt*vpy)/den;
+            v[i][1] = (vpy - cdt*vpx)/den;
+        omega[i][2] = omega[i][2] + dvz;
+
+        rke += (omega[i][2]*omega[i][2])*radi*radi*rmass[i];
 
       } // end if (mask[i] & groupbit)
-    } // end for (int i = 0; i < nlocal; i++) 
+
+      if (!(mask[i]&groupbit)){
+            vn[i][0] =     vn[i][1] =     vn[i][2] = 0.;
+        torque[i][0] = torque[i][1] = torque[i][2] = 0.;
+         omega[i][0] =  omega[i][1] =  omega[i][2] = 0.;
+      }
+ 
+    } // end for (int i = 0; i < nlocal; i++)
 
     for (int i = 0; i < atom->nlocal; i++) {
         vn[i][0] =  omega[i][0]; // integral dLogV
         vn[i][1] =  omega[i][1]; // integral dLogS
         vn[i][2] = torque[i][0]; // dMach
     } // end for (int i = 0; i < atom->nlocal; i++)
-  
-  } else if (timeIntegrationFlag == 1) { // Explicit Rate form
-
-    double rke = 0.0;
-    for (int i = 0; i < nlocal; i++){
-      if (mask[i] & groupbit) {
-
-            v[i][0] = vn[i][0];
-            v[i][1] = vn[i][1];
-        omega[i][2] = vn[i][2];
-
-        // half step displacement with time(n+1) vel
-            x[i][0] += dtf*v[i][0];
-            x[i][1] += dtf*v[i][1];
-
-        rke += (omega[i][2]*omega[i][2])*radius[i]*radius[i]*rmass[i];
-
-      } // end  if (mask[i] & groupbit)
-    } // end for (int i = 0; i < nlocal; i++)
-
-    for (int i = 0; i < atom->nlocal; i++) {
-      if(atom->type[i] != 1) continue;
-        vn[i][0] = omega[i][0]; // integral dLogV
-        vn[i][1] = omega[i][1]; // integral dLogS
-        vn[i][2] =torque[i][2]; // dMach
-    } // end for (int i = 0; i < atom->nlocal; i++)
-
-  } else if (timeIntegrationFlag == 2) { // Implicit Rate form
-
-    double rke = 0.0;
-    for (int i = 0; i < nlocal; i++){
-      if (mask[i] & groupbit) {
-
-            v[i][0] = vn[i][0];
-            v[i][1] = vn[i][1];
-        omega[i][2] = vn[i][2];
-
-        // half step displacement with time(n+1) vel
-           x[i][0] += dtf*v[i][0];
-           x[i][1] += dtf*v[i][1];
-
-        rke += (omega[i][2]*omega[i][2])*radius[i]*radius[i]*rmass[i];
-
-      } // end  if (mask[i] & groupbit)
-    } // end for (int i = 0; i < nlocal; i++)
-
-    for (int i = 0; i < atom->nlocal; i++) {
-      if(atom->type[i] != 1) continue;
-        vn[i][0] =  omega[i][0]; // integral dLogV
-        vn[i][1] =  omega[i][1]; // integral dLogS
-        vn[i][2] = torque[i][0]; // dMach
-    } // end for (int i = 0; i < atom->nlocal; i++)
-
-  } else {
-    error->all(FLERR,"int(timeIntegrationFlag) must be (0,1,2)");
-  }
 
 } // end void FixNVESphereDemsi::final_integrate()
 
