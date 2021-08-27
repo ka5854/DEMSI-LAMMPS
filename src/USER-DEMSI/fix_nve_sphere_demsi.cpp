@@ -111,6 +111,9 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
         vn[i][1] =     v[i][1];
         vn[i][2] = omega[i][2];
 
+//      x[i][0] += dtf * v[i][0];  // half step with time(n) vel
+//      x[i][1] += dtf * v[i][1];
+
         // half step acceleration with time(n) forces
         double dtm = dtf/rmass[i];
         double radi = radius[i];
@@ -237,6 +240,9 @@ void FixNVESphereDemsi::final_integrate()
             v[i][0] = (vpx + cdt*vpy)/den;
             v[i][1] = (vpy - cdt*vpx)/den;
         omega[i][2] = omega[i][2] + dvz;
+
+//      x[i][0] += dtf * v[i][0];  // half step with time(n+1) vel
+//      x[i][1] += dtf * v[i][1];
 
         rke += (omega[i][2]*omega[i][2])*radi*radi*rmass[i];
 
