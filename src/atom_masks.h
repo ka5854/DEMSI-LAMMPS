@@ -70,6 +70,7 @@
 #define GRANULAR_MASK  0x01f00000
 #define FORCING_MASK   0x02000000
 #define THICKNESS_MASK 0x04000000
+#define VN_MASK        0x08000000 // adding vn
 
 // peridynamics
 

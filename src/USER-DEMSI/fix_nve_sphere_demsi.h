@@ -35,7 +35,8 @@ class FixNVESphereDemsi : public FixNVE {
   //DEMSI sets these (presumably they never change during a run;
   // if they are location/temperature dependent, they would have
   // to be made into per-particle properties)
-  double ocean_drag, ocean_density;
+  double ocean_Drag, ocean_Density;
+  double atmos_Drag, atmos_Density;
 
  protected:
   double inertia;

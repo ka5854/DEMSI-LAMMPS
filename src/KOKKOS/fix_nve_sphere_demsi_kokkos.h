@@ -58,6 +58,8 @@ class FixNVESphereDemsiKokkos : public FixNVESphereDemsi {
     typename ArrayTypes<DeviceType>::t_float_1d coriolis;
     typename ArrayTypes<DeviceType>::t_float_2d ocean_vel;
     typename ArrayTypes<DeviceType>::t_float_2d bvector;
+    typename ArrayTypes<DeviceType>::t_float_1d mean_thickness;
+    typename ArrayTypes<DeviceType>::t_v_array vn; // adding vn
 };
 
 template <class DeviceType>
