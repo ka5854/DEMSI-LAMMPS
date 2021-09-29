@@ -397,7 +397,7 @@ void PairGranRate::compute_rate_explicit(int evflag)
 
         fx = (Pplus*nx + Splus*tx)*hDeltal;
         fy = (Pplus*ny + Splus*ty)*hDeltal;
-        fz = radij*Splus*hDeltal;
+        fz = -radij*Splus*hDeltal;
 
         f[i][0] += fx;
         f[i][1] += fy;
@@ -424,18 +424,9 @@ void PairGranRate::compute_rate_explicit(int evflag)
     double dvy = dtm*f[i][1];
     double dvz = dtm*torque[i][2]/(0.5*radi*radi);
 
-    vn[i][0] = v[i][0] + dvx;
-    vn[i][1] = v[i][1] + dvy;
-
-    // semi-implicit rotational acceleration
-    double wn1 = omega[i][2];
-    if (wn1 + 0.5*dvz != 0.) {
-      double dom = dvz/(wn1 + 0.5*dvz); // ~dLogOmega
-      vn[i][2] = wn1 * (1. + fmax(0.,dom))/(1. - fmin(0.,dom));
-    } else {
-      vn[i][2] = wn1 + dvz;
-    }
-
+    vn[i][0] =     v[i][0] + dvx;
+    vn[i][1] =     v[i][1] + dvy;
+    vn[i][2] = omega[i][2] + dvz;
   } // end for (ii = 0; ii < inum; ii++)
 
 } // end PairGranRate::compute_rate_explicit
@@ -503,7 +494,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
   rotation is radius[j]*vz.
 */
 
-  const int nmax = 7; // 1 + max number of neighbors
+  const int nmax = 13; // 1 + max number of neighbors
 //auto ns = new int[inum]; // N = number of neighbors "in contact" with [i]
 //auto ls = new int[inum][nmax]; // list of [j] in the [i] block
 //auto vs = new double[inum][nmax][3]; // [i][j] block velocity
@@ -513,7 +504,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
 
 /* Load the implicit accelerations by solving the system x=Inverse[A].b for
    the new velocity x such that x-vn = Delta[v]. */
-  const int ndim = 2;
+  const int ndim = 3;
 /* work space: uses indices starting with 1 */
   const int wdim = (1 + nmax)*ndim;
   double A[wdim][wdim];  // upper echelon matrix of coefficients
@@ -542,7 +533,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
       if (j >= nlocal) continue;  // debug: exclude off-PE neighbors
       history = &allhistory[size_history*jj];
       Fplus = int(history[2]);
-      if (Fplus == 1) { // the neighbor is "in contact"
+//    if (Fplus == 1) { // the neighbor is "in contact"
         nsp = ns[ii] + 1;
         if(nsp > nmax-1) continue; // continue or break; ?
         ns[ii] = nsp;
@@ -550,7 +541,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
         vs[ii][nsp][0] = v[j][0];
         vs[ii][nsp][1] = v[j][1];
         vs[ii][nsp][2] = omega[j][2];
-      } // end if Fplus == 1
+//    } // end if Fplus == 1
     } // end for (jj = 0; jj < jnum; jj++)
   } // end for (ii = 0; ii < inum; ii++)
 
@@ -613,40 +604,40 @@ void PairGranRate::compute_rate_implicit(int evflag)
         double  gammaK = (dtshear/rmass[i]);
         double  gammaL = (dtshear/rmass[j]);
 
-// 2d form works.
-        double nn[2][2] = {{nx*nx,nx*ny},{ny*nx,ny*ny}};
-        double tt[2][2] = {{tx*tx,tx*ty},{ty*tx,ty*ty}};
+// 2d form.
+//      double nn[2][2] = {{nx*nx,nx*ny},{ny*nx,ny*ny}};
+//      double tt[2][2] = {{tx*tx,tx*ty},{ty*tx,ty*ty}};
 
-// 3d fully coupled form works?
-/*
+// 3d fully coupled form.
+
         double Rij = 2.*(radi*radj)/(radi+radj);
         double  GK = 2.*Rij/(radi*radi);
         double  GL = 2.*Rij/(radj*radj);
         double  nn[3][3] = {{nx*nx,nx*ny,     0.},{ny*nx,ny*ny,     0.},{    0.,    0.,     0.}};
-        double ttK[3][3] = {{tx*tx,tx*ty, Rij*tx},{ty*tx,ty*ty, Rij*ty},{-GK*tx,-GK*ty,-GK*Rij}};
-        double tmK[3][3] = {{tx*tx,tx*ty,-Rij*tx},{ty*tx,ty*ty,-Rij*ty},{-GK*tx,-GK*ty, GK*Rij}};
-        double ttL[3][3] = {{tx*tx,tx*ty, Rij*tx},{ty*tx,ty*ty, Rij*ty},{-GL*tx,-GL*ty,-GL*Rij}};
-        double tmL[3][3] = {{tx*tx,tx*ty,-Rij*tx},{ty*tx,ty*ty,-Rij*ty},{-GL*tx,-GL*ty, GL*Rij}};
-*/
+        double ttK[3][3] = {{tx*tx,tx*ty,-Rij*tx},{ty*tx,ty*ty,-Rij*ty},{-GK*tx,-GK*ty, GK*Rij}};
+        double tmK[3][3] = {{tx*tx,tx*ty, Rij*tx},{ty*tx,ty*ty, Rij*ty},{-GK*tx,-GK*ty,-GK*Rij}};
+        double ttL[3][3] = {{tx*tx,tx*ty,-Rij*tx},{ty*tx,ty*ty,-Rij*ty},{-GL*tx,-GL*ty, GL*Rij}};
+        double tmL[3][3] = {{tx*tx,tx*ty, Rij*tx},{ty*tx,ty*ty, Rij*ty},{-GL*tx,-GL*ty,-GL*Rij}};
+
         for (int jd = 1; jd <= ndim; jd++){
           int neq_k = mf*(jd-1) + kf;
           int neq_l = mf*(jd-1) + lf;
           for (int id = 1; id <= ndim; id++){
             int ind_kf = mf*(id-1) + kf;
             int ind_lf = mf*(id-1) + lf;
-
+/*
             // 2d form
             A[neq_k][ind_kf] = A[neq_k][ind_kf] + (kappaK*nn[id-1][jd-1] + gammaK*tt[id-1][jd-1]);
             A[neq_k][ind_lf] = A[neq_k][ind_lf] - (kappaK*nn[id-1][jd-1] + gammaK*tt[id-1][jd-1]);
             A[neq_l][ind_lf] = A[neq_l][ind_lf] + (kappaL*nn[id-1][jd-1] + gammaL*tt[id-1][jd-1]);
             A[neq_l][ind_kf] = A[neq_l][ind_kf] - (kappaL*nn[id-1][jd-1] + gammaL*tt[id-1][jd-1]);
-/*
+*/
             // 3d fully coupled form
             A[neq_k][ind_kf] = A[neq_k][ind_kf] + (kappaK*nn[id-1][jd-1] + gammaK*ttK[id-1][jd-1]);
             A[neq_k][ind_lf] = A[neq_k][ind_lf] - (kappaK*nn[id-1][jd-1] + gammaK*tmK[id-1][jd-1]);
             A[neq_l][ind_lf] = A[neq_l][ind_lf] + (kappaL*nn[id-1][jd-1] + gammaL*ttL[id-1][jd-1]);
             A[neq_l][ind_kf] = A[neq_l][ind_kf] - (kappaL*nn[id-1][jd-1] + gammaL*tmL[id-1][jd-1]);
-*/
+
           }
         }
       }
@@ -696,36 +687,39 @@ void PairGranRate::compute_rate_implicit(int evflag)
 
   // Here we should probably exchange values of vs among processors ???
 
-  double mvx[inum], mvy[inum], m0t[inum];
-  double rmj;
+  double mvx[inum], mvy[inum], mvz[inum], m0t[inum], I0t[inum];
+  double rmj, rIj;
 
   // get the mass averaged time(n+1) Delta[v]
   for (ii = 0; ii < inum; ii++) {
     for (int kf = 0; kf <= ns[ii]; kf++) {
       j = ls[ii][kf];
-      mvx[j] = mvy[j] = m0t[j] = 0.0;
+      mvx[j] = mvy[j] = mvz[j] = m0t[j] = I0t[j] = 0.0;
     } // end for (int kf = 0; kf <= ns[ii]; kf++) {
   } // end for (ii = 0; ii < inum; ii++)
 
+  double alpha = fmin(1., 1./(bulkCFL*bulkCFL));
   for (ii = 0; ii < inum; ii++) {
     for (int kf = 0; kf <= ns[ii]; kf++) {
       j = ls[ii][kf];
-//    if (j < nlocal) { // because j may not be on this PE
         rmj = rmass[j];
         m0t[j] += rmj;
-        mvx[j] += rmj*(vs[ii][kf][0] - v[j][0]);
-        mvy[j] += rmj*(vs[ii][kf][1] - v[j][1]);
-//    }
+        radj = radius[j];
+        rIj = 0.5*rmj*radj*radj;
+        I0t[j] += rIj;
+        mvx[j] += rmj*(vs[ii][kf][0] -     v[j][0]*alpha);
+        mvy[j] += rmj*(vs[ii][kf][1] -     v[j][1]*alpha);
+        mvz[j] += rIj*(vs[ii][kf][2] - omega[j][2]*alpha);
+//      mvz[j] += rIj*omega[j][2]; // 2d
     } // end for (int kf = 0; kf <= ns[ii]; kf++) {
   } // end for (ii = 0; ii < inum; ii++)
 
   for (ii = 0; ii < inum; ii++) {
     for (int kf = 0; kf <= ns[ii]; kf++) {
       j = ls[ii][kf];
-//    if (j < nlocal) { // because j may not be on this PE
         mvx[j] /= m0t[j];
         mvy[j] /= m0t[j];
-//    }
+        mvz[j] /= I0t[j];
     } // end for (int kf = 0; kf <= ns[ii]; kf++) {
   } // end for (ii = 0; ii < inum; ii++)
 
@@ -734,9 +728,10 @@ void PairGranRate::compute_rate_implicit(int evflag)
     i = ilist[ii];
     itype = atom->type[i];
     if (itype != 1) continue;
-    vn[i][0] =     v[i][0] + mvx[i];
-    vn[i][1] =     v[i][1] + mvy[i];
-    vn[i][2] = omega[i][2];
+    vn[i][0] = mvx[i] +     v[i][0]*alpha;
+    vn[i][1] = mvy[i] +     v[i][1]*alpha;
+    vn[i][2] = mvz[i] + omega[i][2]*alpha;
+//  vn[i][2] = mvz[i]; // 2d
   } // end for (ii = 0; ii < inum; ii++)
 
 //delete[] ns, ls, vs;
@@ -925,7 +920,7 @@ void PairGranRate::load_new_forces(int evflag)
 
         fx = (Pplus*nx + Splus*tx)*hDeltal;
         fy = (Pplus*ny + Splus*ty)*hDeltal;
-        fz = radij*Splus*hDeltal;
+        fz = -radij*Splus*hDeltal;
 
         f[i][0] += fx;
         f[i][1] += fy;

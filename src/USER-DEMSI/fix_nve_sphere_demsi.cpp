@@ -47,6 +47,7 @@ FixNVESphereDemsi::FixNVESphereDemsi(LAMMPS *lmp, int narg, char **arg) :
 
   ocean_Density = ocean_Drag = 0.;
   atmos_Density = atmos_Drag = 0.;
+  drag_force_integration_flag = 0.;
 
   if (domain->dimension != 2)
     error->all(FLERR,"Fix nve/sphere demsi requires 2d simulation");
