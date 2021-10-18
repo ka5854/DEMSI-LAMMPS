@@ -37,7 +37,9 @@ class FixNVESphereDemsi : public FixNVE {
   // to be made into per-particle properties)
   double ocean_Drag, ocean_Density;
   double atmos_Drag, atmos_Density;
-  double drag_force_integration_flag;
+  int drag_force_integration_flag;
+  int time_integration_flag;
+  double Hugoniot_Vel_Jump;
 
  protected:
   double inertia;

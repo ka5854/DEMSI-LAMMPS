@@ -69,8 +69,7 @@ class AtomKokkos : public Atom {
   DAT::tdual_float_2d k_forcing;
   DAT::tdual_float_2d k_ocean_vel;
   DAT::tdual_float_2d k_bvector;
-
-  DAT::tdual_v_array k_vn; // adding vn
+  DAT::tdual_v_array k_vn;
 
   // SPIN package
   DAT::tdual_float_1d_4 k_sp;

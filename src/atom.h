@@ -172,7 +172,7 @@ class Atom : protected Pointers {
   double *coriolis;
   double **ocean_vel;
   double **bvector;
-  double **vn; // adding vn
+  double **vn;
 
   // end of customization section
   // --------------------------------------------------------------------

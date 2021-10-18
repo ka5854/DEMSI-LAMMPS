@@ -80,22 +80,23 @@ void PairGranRate::compute(int eflag, int vflag)
     comm->forward_comm_pair(this);
   }
 */
+  if (UseTVTransport) {
+    compute_TV_Transport(evflag);
 
-  compute_TV_Transport(evflag);
+    MPI_Barrier(MPI_COMM_WORLD); // debug...
+    comm->exchange();
+    comm->borders();
+  }
 
-  MPI_Barrier(MPI_COMM_WORLD); // debug...
-  comm->exchange();
-  comm->borders();
+  if       (timeIntegrationFlag == 0) { //nothing to do
 
-  if       (int(timeIntegrationFlag) == 0) { compute_rate_exverlet(evflag);
+  } else if(timeIntegrationFlag == 1) { compute_rate_explicit(evflag);
 
-  } else if(int(timeIntegrationFlag) == 1) { compute_rate_explicit(evflag);
-
-  } else if(int(timeIntegrationFlag) == 2) { compute_rate_implicit(evflag);
+  } else if(timeIntegrationFlag == 2) { compute_rate_implicit(evflag);
 
   } else {
 
-    error->all(FLERR,"int(timeIntegrationFlag) must be (0,1,2)");
+    error->all(FLERR,"timeIntegrationFlag must be (0,1,2)");
 
   }
 
@@ -110,7 +111,8 @@ void PairGranRate::compute(int eflag, int vflag)
 } // end PairGranRate::compute
 /* ---------------------------------------------------------------------- */
 
-void PairGranRate::compute_TV_Transport(int evflag) {
+void PairGranRate::compute_TV_Transport(int evflag)
+{
   int i,j,ii,jj,inum,jnum;
   int itype,jtype;
 
@@ -169,18 +171,28 @@ void PairGranRate::compute_TV_Transport(int evflag) {
   double rmj, rIj;
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
+/*
+     rmj = rmass[i];
+    radj = radius[i];
+     rIj = 0.5*rmj*radj*radj;
+    mvx[i] += rmj*vn[i][0];
+    mvy[i] += rmj*vn[i][1];
+    m0t[i] += rmj;
+    mvz[i] += rIj*vn[i][2];
+    mIt[i] += rIj;
+*/
     jlist = firstneigh[i];
     jnum = numneigh[i];
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
-//    j &= NEIGHMASK;
-       rmj = rmass[j]; // inertial coastline
+      j &= NEIGHMASK;
+       rmj = rmass[j];
       radj = radius[j];
        rIj = 0.5*rmj*radj*radj;
-      mvx[i] += rmj*v[j][0];
-      mvy[i] += rmj*v[j][1];
+      mvx[i] += rmj*vn[j][0];
+      mvy[i] += rmj*vn[j][1];
       m0t[i] += rmj;
-      mvz[i] += rIj*omega[j][2];
+      mvz[i] += rIj*vn[j][2];
       mIt[i] += rIj;
     } // end for (jj = 0; jj < jnum; jj++) {
   } // end for (ii = 0; ii < inum; ii++)
@@ -194,71 +206,30 @@ void PairGranRate::compute_TV_Transport(int evflag) {
 
     if (m0t[i] > 0.) {
       double rmt = 1./m0t[i];
-      dvx = mvx[i]*rmt    -     v[i][0];
-      dvy = mvy[i]*rmt    -     v[i][1];
-      dvz = mvz[i]/mIt[i] - omega[i][2];
+      dvx = mvx[i]*rmt    - vn[i][0];
+      dvy = mvy[i]*rmt    - vn[i][1];
+      dvz = mvz[i]/mIt[i] - vn[i][2];
       radi = radius[i];
       dvsqr = dvx*dvx + dvy*dvy + (radi*dvz)*(radi*dvz); // |dv|^2
-      dMach = sqrt(dvsqr)*dtf/(2.*radi); // increases with bulkCFL
-//    dMach = sqrt(dvsqr)/elastic_wavespeed;
+      dMach = 0.5*dtv*sqrt(dvsqr)/(2.*radi); // increases with bulkCFL
     } else {
       dvx = dvy = dvz = dMach = 0.;
     }
     torque[i][0] = sqrt(dvsqr)/elastic_wavespeed; // dMach diagnostic
 
-    if ( int(UseTVTransport) == 1 ) {
-          dMach = fmin(0.5, 0.5*dMach);
-          v[i][0] += dMach*dvx;
-          v[i][1] += dMach*dvy;
-      omega[i][2] += dMach*dvz;
+    if (UseTVTransport) {
+      dMach = fmin(0.5, 0.5*dMach);
+    } else {
+      dMach = 0.;
     }
+
+    vn[i][0] += dMach*dvx;
+    vn[i][1] += dMach*dvy;
+    vn[i][2] += dMach*dvz;
 
   } // end for (ii = 0; ii < inum; ii++)
 
 } // end PairGranRate::compute_TV_Transport
-/* ---------------------------------------------------------------------- */
-
-void PairGranRate::compute_rate_exverlet(int evflag) {
-  int i,j,ii,jj,inum,jnum;
-  int itype,jtype;
-
-  int *ilist,*jlist,*numneigh,**firstneigh;
-  int **firsttouch;
-  double *history,*allhistory,**firsthistory;
-  
-  inum = list->inum;
-  ilist = list->ilist;
-  numneigh = list->numneigh;
-  firstneigh = list->firstneigh;
-
-  firsttouch = fix_history->firstflag;
-  firsthistory = fix_history->firstvalue;
-  
-  double **x = atom->x;
-  double **v = atom->v;
-  double **f = atom->f;
-  double **vn = atom->vn;
-  double **omega = atom->omega;
-  double **torque = atom->torque;
-  double *radius = atom->radius;
-  double *rmass = atom->rmass;
-  double *ice_area = atom->ice_area;
-  double *mean_thickness = atom->mean_thickness;
-  int *type = atom->type;
-  int *mask = atom->mask;
-  int nlocal = atom->nlocal;
-
-  for (ii = 0; ii < inum; ii++) {
-    i = ilist[ii];
-    itype = atom->type[i];
-    if (itype != 1) continue;
-
-    vn[i][0] =     v[i][0];
-    vn[i][1] =     v[i][1];
-    vn[i][2] = omega[i][2];
-  } // end for (ii = 0; ii < inum; ii++)
-
-} // end PairGranRate::compute_rate_verlet
 /* ---------------------------------------------------------------------- */
 
 void PairGranRate::compute_rate_explicit(int evflag)
@@ -343,71 +314,79 @@ void PairGranRate::compute_rate_explicit(int evflag)
          *history[1]: contactShear
          *history[2]: contactFlag [0=no contact, 1=in contact]]
       */
-
+/*
       delx = x[j][0] - x[i][0]; // outward normal relative to [i]
       dely = x[j][1] - x[i][1];
+*/
+      double xjp = x[j][0] + dtf*(vn[j][0] - v[j][0]);
+      double yjp = x[j][1] + dtf*(vn[j][1] - v[j][1]);
+      double xip = x[i][0] + dtf*(vn[i][0] - v[i][0]);
+      double yip = x[i][1] + dtf*(vn[i][1] - v[i][1]);
+      delx = xjp - xip; // outward normal relative to [i]
+      dely = yjp - yip;
+
       rsq = delx*delx + dely*dely;
+      r = sqrt(rsq);
+      rinv = 1./r;
+      nx = delx*rinv;
+      ny = dely*rinv;
+      tx = -ny;
+      ty =  nx;
 
-        r = sqrt(rsq);
-        rinv = 1./r;
-        nx = delx*rinv;
-        ny = dely*rinv;
-        tx = -ny;
-        ty =  nx;
+      // relative translational velocity vector
+      vrx = vn[j][0] - vn[i][0];
+      vry = vn[j][1] - vn[i][1];
 
-        // relative translational velocity vector
-        vrx = v[j][0] - v[i][0];
-        vry = v[j][1] - v[i][1];
+      // relative rotational velocity
+      double radij = 2*(radi * radj)/(radi + radj); // Harmonic mean radius
+      wrz = radij*(vn[i][2] + vn[j][2]);
 
-        // relative rotational velocity
-        double radij = 2*(radi * radj)/(radi + radj); // Harmonic mean radius
-        wrz = radij*(omega[i][2] + omega[j][2]);
+      // magnitude of the normal relative velocity
+      vnnr = vrx*nx + vry*ny;
 
-        // magnitude of the normal relative velocity
-        vnnr = vrx*nx + vry*ny;
-
-        // magnitude of the tangential relative velocity
-        vttr = vrx*tx + vry*ty + wrz;
+      // magnitude of the tangential relative velocity
+      vttr = vrx*tx + vry*ty + wrz;
 
       if (Fplus){ // half step stress increment
         Pplus =  bulkModulus*dtf*vnnr*rinv;
         Splus = shearModulus*dtf*vttr*rinv;
       }
-          // test for tensile fracture, compressive flowstress, shear flowstress
-          if (Pplus >= tensileFractureStress) { // perfectly plastic tensile flowstress with fracture
-              Pplus = 0.; Fplus = 0;
-//          Pplus = tensileFractureStress;
-//          if (log(r/radsum) > ultimateTensileStrain) { // fracture
-//            Pplus = 0.; Fplus = 0;
-//          }
-          } else if (Pplus < compressiveYieldStress) { // perfectly plastic compressive flowstress
-            Pplus = compressiveYieldStress;
-          }
-          Sxplus = Splus*tx;
-          Syplus = Splus*ty;
-          SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/shearYieldStress;
-          if (SYield > 1.0) { // perfectly plastic shear flowstress
-            Splus /= SYield;
-          }
 
-        hAVGi = mean_thickness[i];
-        hAVGj = mean_thickness[j];
-        hDeltal = 2.*MY_PI3*(radi*hAVGi * radj*hAVGj)
-                           /(radi*hAVGi + radj*hAVGj); // contact Area
-
-        fx = (Pplus*nx + Splus*tx)*hDeltal;
-        fy = (Pplus*ny + Splus*ty)*hDeltal;
-        fz = -radij*Splus*hDeltal;
-
-        f[i][0] += fx;
-        f[i][1] += fy;
-        torque[i][2] += fz;
-
-        if (force->newton_pair || j < atom->nlocal){
-          f[j][0] -= fx;
-          f[j][1] -= fy;
-          torque[j][2] += fz;
+      // test for tensile fracture, compressive flowstress, shear flowstress
+      if (Pplus >= tensileFractureStress) { // perfectly plastic tensile flowstress with fracture
+        Pplus = tensileFractureStress;
+        if (r/radsum > 4.) { // fracture
+          Pplus = 0.; Fplus = 0;
         }
+      } else if (Pplus < compressiveYieldStress) { // perfectly plastic compressive flowstress
+        Pplus = compressiveYieldStress;
+      }
+      Sxplus = Splus*tx;
+      Syplus = Splus*ty;
+      SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/shearYieldStress;
+      if (SYield > 1.0) { // perfectly plastic shear flowstress
+        Splus /= SYield;
+      }
+
+      // load the forces and torques
+      hAVGi = mean_thickness[i];
+      hAVGj = mean_thickness[j];
+      hDeltal = 2.*MY_PI3*(radi*hAVGi * radj*hAVGj)
+                         /(radi*hAVGi + radj*hAVGj); // contact Area
+
+      fx = (Pplus*nx + Splus*tx)*hDeltal;
+      fy = (Pplus*ny + Splus*ty)*hDeltal;
+      fz = -radij*Splus*hDeltal;
+
+      f[i][0] += fx;
+      f[i][1] += fy;
+      torque[i][2] += fz;
+
+      if (force->newton_pair || j < atom->nlocal){
+        f[j][0] -= fx;
+        f[j][1] -= fy;
+        torque[j][2] += fz;
+      }
 
     } // end for (jj = 0; jj < jnum; jj++)
   } // end for (ii = 0; ii < inum; ii++)
@@ -480,6 +459,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
 
   double dtv = update->dt;
   double dtf = 0.5*dtv;
+
 /*
   Allocate memory for the block data according to this blocking scheme:
   Each element [i] has a block of size N where N is the number of neighbors
@@ -494,7 +474,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
   rotation is radius[j]*vz.
 */
 
-  const int nmax = 13; // 1 + max number of neighbors
+  const int nmax = 7; // 1 + max number of neighbors
 //auto ns = new int[inum]; // N = number of neighbors "in contact" with [i]
 //auto ls = new int[inum][nmax]; // list of [j] in the [i] block
 //auto vs = new double[inum][nmax][3]; // [i][j] block velocity
@@ -504,7 +484,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
 
 /* Load the implicit accelerations by solving the system x=Inverse[A].b for
    the new velocity x such that x-vn = Delta[v]. */
-  const int ndim = 3;
+  const int ndim = 3; // 2 for 2d, 3 for 3d
 /* work space: uses indices starting with 1 */
   const int wdim = (1 + nmax)*ndim;
   double A[wdim][wdim];  // upper echelon matrix of coefficients
@@ -514,7 +494,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
 //auto P = new double[wdim][wdim];
 //auto b = new double[wdim];
 
-/* load the lists ns, ls, vs */
+  //load the lists ns, ls, vs
   int nsp; // can be up to nmax-1
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
@@ -524,9 +504,9 @@ void PairGranRate::compute_rate_implicit(int evflag)
 
     ns[ii] = 0; // pair number at ii, so far...
     ls[ii][0] = i; // element number at ii
-    vs[ii][0][0] = v[i][0];
-    vs[ii][0][1] = v[i][1];
-    vs[ii][0][2] = omega[i][2];
+    vs[ii][0][0] = vn[i][0];
+    vs[ii][0][1] = vn[i][1];
+    vs[ii][0][2] = vn[i][2];
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
       j &= NEIGHMASK;
@@ -538,9 +518,9 @@ void PairGranRate::compute_rate_implicit(int evflag)
         if(nsp > nmax-1) continue; // continue or break; ?
         ns[ii] = nsp;
         ls[ii][nsp] = j;
-        vs[ii][nsp][0] = v[j][0];
-        vs[ii][nsp][1] = v[j][1];
-        vs[ii][nsp][2] = omega[j][2];
+        vs[ii][nsp][0] = vn[j][0];
+        vs[ii][nsp][1] = vn[j][1];
+        vs[ii][nsp][2] = vn[j][2];
 //    } // end if Fplus == 1
     } // end for (jj = 0; jj < jnum; jj++)
   } // end for (ii = 0; ii < inum; ii++)
@@ -596,20 +576,19 @@ void PairGranRate::compute_rate_implicit(int evflag)
         hDeltal = 2.*MY_PI3*(radi*hAVGi * radj*hAVGj)
                            /(radi*hAVGi + radj*hAVGj); // contact Area
 
-        double   dtfac = (dtf*dtf)*hDeltal*rinv; // half step with half stress increment
+        double   dtfac = (dtf*dtf)*hDeltal*rinv; // half step with half step stress increment
         double  dtbulk =  bulkModulus*dtfac;
         double dtshear = shearModulus*dtfac;
         double  kappaK =  (dtbulk/rmass[i]);
         double  kappaL =  (dtbulk/rmass[j]);
         double  gammaK = (dtshear/rmass[i]);
         double  gammaL = (dtshear/rmass[j]);
-
+/*
 // 2d form.
-//      double nn[2][2] = {{nx*nx,nx*ny},{ny*nx,ny*ny}};
-//      double tt[2][2] = {{tx*tx,tx*ty},{ty*tx,ty*ty}};
-
+        double nn[2][2] = {{nx*nx,nx*ny},{ny*nx,ny*ny}};
+        double tt[2][2] = {{tx*tx,tx*ty},{ty*tx,ty*ty}};
+*/
 // 3d fully coupled form.
-
         double Rij = 2.*(radi*radj)/(radi+radj);
         double  GK = 2.*Rij/(radi*radi);
         double  GL = 2.*Rij/(radj*radj);
@@ -685,8 +664,6 @@ void PairGranRate::compute_rate_implicit(int evflag)
     }
   } // end for (ii = 0; ii < inum; ii++) if(ns[ii] > 0) {
 
-  // Here we should probably exchange values of vs among processors ???
-
   double mvx[inum], mvy[inum], mvz[inum], m0t[inum], I0t[inum];
   double rmj, rIj;
 
@@ -698,7 +675,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
     } // end for (int kf = 0; kf <= ns[ii]; kf++) {
   } // end for (ii = 0; ii < inum; ii++)
 
-  double alpha = fmin(1., 1./(bulkCFL*bulkCFL));
+  double alpha = 0.5; // 0. <= alpha <= 1.
   for (ii = 0; ii < inum; ii++) {
     for (int kf = 0; kf <= ns[ii]; kf++) {
       j = ls[ii][kf];
@@ -707,10 +684,9 @@ void PairGranRate::compute_rate_implicit(int evflag)
         radj = radius[j];
         rIj = 0.5*rmj*radj*radj;
         I0t[j] += rIj;
-        mvx[j] += rmj*(vs[ii][kf][0] -     v[j][0]*alpha);
-        mvy[j] += rmj*(vs[ii][kf][1] -     v[j][1]*alpha);
-        mvz[j] += rIj*(vs[ii][kf][2] - omega[j][2]*alpha);
-//      mvz[j] += rIj*omega[j][2]; // 2d
+        mvx[j] += rmj*(vs[ii][kf][0] - vn[j][0]);
+        mvy[j] += rmj*(vs[ii][kf][1] - vn[j][1]);
+        mvz[j] += rIj*(vs[ii][kf][2] - vn[j][2]*alpha);
     } // end for (int kf = 0; kf <= ns[ii]; kf++) {
   } // end for (ii = 0; ii < inum; ii++)
 
@@ -723,15 +699,14 @@ void PairGranRate::compute_rate_implicit(int evflag)
     } // end for (int kf = 0; kf <= ns[ii]; kf++) {
   } // end for (ii = 0; ii < inum; ii++)
 
-  // half step with the half step stress increment, averaged
+  // full step with the full step stress increment, averaged
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
     itype = atom->type[i];
     if (itype != 1) continue;
-    vn[i][0] = mvx[i] +     v[i][0]*alpha;
-    vn[i][1] = mvy[i] +     v[i][1]*alpha;
-    vn[i][2] = mvz[i] + omega[i][2]*alpha;
-//  vn[i][2] = mvz[i]; // 2d
+    vn[i][0] = mvx[i] + vn[i][0];
+    vn[i][1] = mvy[i] + vn[i][1];
+    vn[i][2] = mvz[i] + vn[i][2]*alpha;
   } // end for (ii = 0; ii < inum; ii++)
 
 //delete[] ns, ls, vs;
@@ -783,9 +758,7 @@ void PairGranRate::load_new_forces(int evflag)
   double SYield;  // shear yield conditions
 
   int historyupdate = 1;
-// in the RATE_FORM case we must do the history update at setup in order
-// to properly initialize the history variables... ???
-// if (update->setupflag) return;
+  if (update->setupflag) return;
 
   double dtv = update->dt;
   double dtf = 0.5 * update->dt; // * force->ftm2v;
@@ -814,8 +787,6 @@ void PairGranRate::load_new_forces(int evflag)
       jtype = atom->type[j];
       j &= NEIGHMASK;
       radj = radius[j];
-
-//    *touch = &firsttouch[i][jj];
       history = &allhistory[size_history*jj];
 
       /*'history' now points to the ii-jj array that stores
@@ -823,14 +794,21 @@ void PairGranRate::load_new_forces(int evflag)
          For all pairs:
          *history[0]: contactPressure
          *history[1]: contactShear
-         *history[2]: contactFlag [0=no contact, 1=in contact]]
+         *history[2]: contactFlag [0=no contact, 1=in contact]
       */
-
+/*
       delx = x[j][0] - x[i][0]; // outward normal relative to [i]
       dely = x[j][1] - x[i][1];
+*/
+      double xjp = x[j][0] + dtv*(vn[j][0] - v[j][0]);
+      double yjp = x[j][1] + dtv*(vn[j][1] - v[j][1]);
+      double xip = x[i][0] + dtv*(vn[i][0] - v[i][0]);
+      double yip = x[i][1] + dtv*(vn[i][1] - v[i][1]);
+      delx = xjp - xip; // outward normal relative to [i]
+      dely = yjp - yip;
+
       rsq = delx*delx + dely*dely;
-//    radsum = 1.30*(radi + radj);
-//    radsum = 1.00*(radi + radj);
+//    radsum = radi + radj;
 //    radsum = LapOver*(radi + radj); // 100% area coverage form
       radsum = OverLap*(radi + radj); // <100%
 
@@ -839,47 +817,47 @@ void PairGranRate::load_new_forces(int evflag)
 
       if(!bondFlagIn){
         if (rsq >= radsum*radsum){ // no contact
-//        firsttouch[i][jj] = 0;
           touch[jj] = 0;
           Fplus = 0;
           Pplus = 0.;
           Splus = 0.;
           fx = fy = fz = 0.;
         } else { // in first contact
-//        firsttouch[i][jj] = 1;
           touch[jj] = 1;
           Fplus = 1;
         } // end if(rsq >= radsum*radsum
         history[0] = history[1] = 0.;
       } // end if(!bondFlagIn)
 
-        r = sqrt(rsq);
-        rinv = 1./r;
-        nx = delx*rinv;
-        ny = dely*rinv;
-        tx = -ny;
-        ty =  nx;
+      r = sqrt(rsq);
+      rinv = 1./r;
+      nx = delx*rinv;
+      ny = dely*rinv;
+      tx = -ny;
+      ty =  nx;
 
-        // relative translational velocity vector
-        vrx = vn[j][0] - vn[i][0];
-        vry = vn[j][1] - vn[i][1];
+      // relative translational velocity vector
+      vrx = vn[j][0] - vn[i][0];
+      vry = vn[j][1] - vn[i][1];
 
-        // relative rotational velocity
-        double radij = 2*(radi * radj)/(radi + radj); // Harmonic mean radius
-        wrz = radij*(vn[i][2] + vn[j][2]);
+      // relative rotational velocity
+      double radij = 2*(radi * radj)/(radi + radj); // Harmonic mean radius
+      wrz = radij*(vn[i][2] + vn[j][2]);
 
-        // magnitude of the normal relative velocity
-        vnnr = vrx*nx + vry*ny;
+      // magnitude of the normal relative velocity
+      vnnr = vrx*nx + vry*ny;
 
-        // magnitude of the tangential relative velocity
-        vttr = vrx*tx + vry*ty + wrz;
+      // magnitude of the tangential relative velocity
+      vttr = vrx*tx + vry*ty + wrz;
 
       double dLogV = dtv*vnnr*rinv;
       double dLogS = dtv*vttr*rinv;
-       omega[i][0] += dLogV/2.;
-       omega[j][0] += dLogV/2.;
-       omega[i][1] += dLogS/2.;
-       omega[j][1] += dLogS/2.;
+      
+      // increment some diagnostics
+      omega[i][0] += dLogV/2.;
+      omega[j][0] += dLogV/2.;
+      omega[i][1] += dLogS/2.;
+      omega[j][1] += dLogS/2.;
         
       if (Fplus){
         Pplus = history[0] +  bulkModulus*dLogV; // full step stress
@@ -889,48 +867,48 @@ void PairGranRate::load_new_forces(int evflag)
         Splus = 0.;
       }
 
-          // test for tensile fracture, compressive flowstress, shear flowstress
-          if (Pplus >= tensileFractureStress) { // perfectly plastic tensile flowstress with fracture
-              Pplus = 0.; Fplus = 0;
-//          Pplus = tensileFractureStress;
-//          if (log(r/radsum) > ultimateTensileStrain) { // fracture
-//            Pplus = 0.; Fplus = 0;
-//          }
-          } else if (Pplus < compressiveYieldStress) { // perfectly plastic compressive flowstress
-            Pplus = compressiveYieldStress;
-          }
-          Sxplus = Splus*tx;
-          Syplus = Splus*ty;
-          SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/shearYieldStress;
-          if (SYield > 1.0) { // perfectly plastic shear flowstress
-            Splus /= SYield;
-          }
-
-        // update history
-        if(historyupdate){
-          history[0] = Pplus;
-          history[1] = Splus;
-          history[2] = double(Fplus);
+      // test for tensile fracture, compressive flowstress, shear flowstress
+      if (Pplus >= tensileFractureStress) { // perfectly plastic tensile flowstress with fracture
+        Pplus = tensileFractureStress;
+        if (r/radsum > 4.) { // fracture
+          Pplus = 0.; Fplus = 0;
         }
+      } else if (Pplus < compressiveYieldStress) { // perfectly plastic compressive flowstress
+        Pplus = compressiveYieldStress;
+      }
+      Sxplus = Splus*tx;
+      Syplus = Splus*ty;
+      SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/shearYieldStress;
+      if (SYield > 1.0) { // perfectly plastic shear flowstress
+        Splus /= SYield;
+      }
 
-        hAVGi = mean_thickness[i];
-        hAVGj = mean_thickness[j];
-        hDeltal = 2.*MY_PI3*(radi*hAVGi * radj*hAVGj)
-                           /(radi*hAVGi + radj*hAVGj); // contact Area
+      // update history
+      if(historyupdate){
+        history[0] = Pplus;
+        history[1] = Splus;
+        history[2] = double(Fplus);
+      }
 
-        fx = (Pplus*nx + Splus*tx)*hDeltal;
-        fy = (Pplus*ny + Splus*ty)*hDeltal;
-        fz = -radij*Splus*hDeltal;
+      // load the forces and torques
+      hAVGi = mean_thickness[i];
+      hAVGj = mean_thickness[j];
+      hDeltal = 2.*MY_PI3*(radi*hAVGi * radj*hAVGj)
+                         /(radi*hAVGi + radj*hAVGj); // contact Area
 
-        f[i][0] += fx;
-        f[i][1] += fy;
-        torque[i][2] += fz;
+      fx = (Pplus*nx + Splus*tx)*hDeltal;
+      fy = (Pplus*ny + Splus*ty)*hDeltal;
+      fz = -radij*Splus*hDeltal;
 
-        if (force->newton_pair || j < atom->nlocal){
-          f[j][0] -= fx;
-          f[j][1] -= fy;
-          torque[j][2] += fz;
-        }
+      f[i][0] += fx;
+      f[i][1] += fy;
+      torque[i][2] += fz;
+
+      if (force->newton_pair || j < atom->nlocal){
+        f[j][0] -= fx;
+        f[j][1] -= fy;
+        torque[j][2] += fz;
+      }
 
       if (evflag) ev_tally_xyz(i,j,atom->nlocal, force->newton_pair,
               0.0,0.0,fx,fy,0,x[i][0]-x[j][0],x[i][1]-x[j][1],0);
@@ -954,9 +932,6 @@ void PairGranRate::settings(int narg, char **arg)
      timeIntegrationFlag = utils::numeric(FLERR, arg[5],false,lmp);
                  bulkCFL = utils::numeric(FLERR, arg[6],false,lmp);
           UseTVTransport = utils::numeric(FLERR, arg[7],false,lmp);
-
-// ultimateTensileStrain = 2.*tensileFractureStress/bulkModulus;
-// ultimateTensileStrain = 2.;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -979,8 +954,12 @@ double PairGranRate::single(int i, int j, int itype, int jtype,
 }
 
 /* ---------------------------------------------------------------------- */
-void PairGranRate::transfer_history(double* sourcevalues, double* targetvalues){
+
+void PairGranRate::transfer_history(double* sourcevalues, double* targetvalues)
+{
     for (int k = 0; k < size_history; k++){
       targetvalues[k] = sourcevalues[k];
     }
 };
+
+/* ---------------------------------------------------------------------- */

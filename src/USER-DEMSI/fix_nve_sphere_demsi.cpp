@@ -47,7 +47,9 @@ FixNVESphereDemsi::FixNVESphereDemsi(LAMMPS *lmp, int narg, char **arg) :
 
   ocean_Density = ocean_Drag = 0.;
   atmos_Density = atmos_Drag = 0.;
-  drag_force_integration_flag = 0.;
+  drag_force_integration_flag = 0;
+  time_integration_flag = 0;
+  Hugoniot_Vel_Jump = 0.;
 
   if (domain->dimension != 2)
     error->all(FLERR,"Fix nve/sphere demsi requires 2d simulation");
@@ -94,7 +96,7 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
   double **ocean_vel = atom->ocean_vel;
   double **bvector = atom->bvector;
   double **forcing = atom->forcing;
-  double **vn = atom->vn; // adding vn
+  double **vn = atom->vn;
   double *mean_thickness = atom->mean_thickness;
 
   double D, vel_diff, m_prime;
@@ -171,7 +173,7 @@ void FixNVESphereDemsi::final_integrate()
   double **ocean_vel = atom->ocean_vel;
   double **bvector = atom->bvector;
   double **forcing = atom->forcing;
-  double **vn = atom->vn; // adding vn
+  double **vn = atom->vn;
   double *mean_thickness = atom->mean_thickness;
 
   double *radius = atom->radius;
