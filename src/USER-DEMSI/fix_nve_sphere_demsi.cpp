@@ -45,8 +45,8 @@ FixNVESphereDemsi::FixNVESphereDemsi(LAMMPS *lmp, int narg, char **arg) :
   // inertia = moment of inertia prefactor for sphere or disc
   inertia = 0.5;
 
-  ocean_Density = ocean_Drag = 0.;
-  atmos_Density = atmos_Drag = 0.;
+  ocean_density = ocean_drag = 0.;
+  atmos_density = atmos_drag = 0.;
   drag_force_integration_flag = 0;
   time_integration_flag = 0;
   Hugoniot_Vel_Jump = 0.;
@@ -120,7 +120,7 @@ void FixNVESphereDemsi::initial_integrate(int /*vflag*/)
     if (mask[i] & groupbit) {
       vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
           (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
-      D = ice_area[i]*ocean_Drag*ocean_Density*vel_diff;
+      D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
       m_prime = rmass[i]/dtf;
       a00 = a11 = m_prime+D;
       a10 = rmass[i]*coriolis[i];
@@ -203,7 +203,7 @@ void FixNVESphereDemsi::final_integrate()
 
         vel_diff = sqrt((ocean_vel[i][0]-v[i][0])*(ocean_vel[i][0]-v[i][0]) +
           (ocean_vel[i][1]-v[i][1])*(ocean_vel[i][1]-v[i][1]));
-        D = ice_area[i]*ocean_Drag*ocean_Density*vel_diff;
+        D = ice_area[i]*ocean_drag*ocean_density*vel_diff;
         m_prime = rmass[i]/dtf;
         a00 = a11 = m_prime+D;
         a10 = rmass[i]*coriolis[i];
