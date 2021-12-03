@@ -21,6 +21,7 @@ PairStyle(gran/rate,PairGranRate)
 #define LMP_PAIR_GRAN_RATE_H
 
 #include "pair_gran_hooke_history.h"
+#include <cmath>
 
 namespace LAMMPS_NS {
 
@@ -42,6 +43,7 @@ protected:
   void allocate();
 
   int history_ndim;
+  int icount;
 
   double  bulkModulus;
   double shearModulus;
@@ -51,12 +53,16 @@ protected:
   double timeIntegrationFlag;
   double bulkCFL;
   double UseTVTransport;
+
+  double ultimateTensileStrain;
   double elastic_wavespeed;
 
   const double OverLap = 1.050075135808664;   // R^\prime/R = \sqrt(2\sqrt(3) \slash \pi)
   const double LapOver = 0.9523128068639574;  // R/R^\prime = \sqrt(\pi \slash 2\sqrt(3))
   const double rho0 = 900.;  // kg/m^3
   const double MY_PI3 = 1.0471975511965976; // pi/3
+  const double PIby2 = asin(1.);  // (1/2) pi
+  const double PI3by2 = 3.*PIby2; // (3/2) pi
 };
 
 }

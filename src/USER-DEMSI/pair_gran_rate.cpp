@@ -296,6 +296,8 @@ void PairGranRate::compute_rate_explicit(int evflag)
       radj = radius[j];
 
       history = &allhistory[size_history*jj];
+      bondFlagIn = int(history[2]);
+      Fplus = bondFlagIn;
 
       /*'history' now points to the ii-jj array that stores
         all the history associated with pair ii-jj
@@ -305,13 +307,8 @@ void PairGranRate::compute_rate_explicit(int evflag)
         *history[2]: contactFlag [0=no contact, 1=in contact]
       */
 
-      double xjp = x[j][0] + dtf*(vn[j][0] - v[j][0]);
-      double yjp = x[j][1] + dtf*(vn[j][1] - v[j][1]);
-      double xip = x[i][0] + dtf*(vn[i][0] - v[i][0]);
-      double yip = x[i][1] + dtf*(vn[i][1] - v[i][1]);
-      delx = xjp - xip; // outward normal relative to [i]
-      dely = yjp - yip;
-
+      delx = x[j][0] - x[i][0];
+      dely = x[j][1] - x[i][1];
       rsq = delx*delx + dely*dely;
       r = sqrt(rsq);
       rinv = 1./r;
@@ -334,14 +331,24 @@ void PairGranRate::compute_rate_explicit(int evflag)
       // magnitude of the tangential relative velocity
       vttr = vrx*tx + vry*ty + wrz;
 
-      if (Fplus){ // half step stress increment
-        Pplus =  bulkModulus*dtf*vnnr*rinv;
-        Splus = shearModulus*dtf*vttr*rinv;
+      double dLogV = dtf*vnnr*rinv;
+      double dLogS = dtf*vttr*rinv;
+
+      if (Fplus){
+        Pplus =  bulkModulus*dLogV; // half step stress increment
+        Splus = shearModulus*dLogS;
+      } else {
+        Pplus = 0.;
+        Splus = 0.;
+//      Pplus =  bulkModulus*dLogV/5.; // (1/5) half step stress increment
+//      Splus = shearModulus*dLogS/5.;
       }
-/*
+
       // test for tensile fracture, compressive flowstress, shear flowstress
       if (Pplus >= tensileFractureStress) { // brittle elastic fracture
-        Pplus = 0.; Fplus = 0.;
+//      Pplus = 0.; Fplus = 0;
+        Pplus = tensileFractureStress;
+        if (r/radsum > 5.) {Pplus = 0.; Fplus = 0;}
       } else if (Pplus <= compressiveYieldStress) { // perfectly plastic compressive flowstress
         Pplus = compressiveYieldStress;
       }
@@ -353,7 +360,7 @@ void PairGranRate::compute_rate_explicit(int evflag)
       double sfac = fmax(1.e-99, (1. - pfac));
       SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/(shearYieldStress*sfac);
       if (SYield > 1.0) {Splus /= SYield;}
-*/
+
       // load the forces and torques
       hAVGi = mean_thickness[i];
       hAVGj = mean_thickness[j];
@@ -453,7 +460,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
 
     The list of contacting neighbors is ls[i][n=0,N] so that ls[i][0]=i, and the
     remaining ls[i][n=1,N] contains the list of up to 6 neighbors, in whatever
-     order they may have been found by the touching algorithm.
+    order they may have been found by the touching algorithm.
 
     The array vs[i][n][3] contains the velocity {vx,vy,vz} where the
     azimuthal rotation rate is stored in vz, so the tangential velocity due to
@@ -776,13 +783,8 @@ void PairGranRate::load_new_forces(int evflag)
         *history[2]: contactFlag [0=no contact, 1=in contact]
       */
 
-      double xjp = x[j][0] + dtv*(vn[j][0] - v[j][0]);
-      double yjp = x[j][1] + dtv*(vn[j][1] - v[j][1]);
-      double xip = x[i][0] + dtv*(vn[i][0] - v[i][0]);
-      double yip = x[i][1] + dtv*(vn[i][1] - v[i][1]);
-      delx = xjp - xip; // outward normal relative to [i]
-      dely = yjp - yip;
-
+      delx = x[j][0] - x[i][0];
+      dely = x[j][1] - x[i][1];
       rsq = delx*delx + dely*dely;
       radsum = OverLap*(radi + radj); // <100%
 
@@ -826,24 +828,22 @@ void PairGranRate::load_new_forces(int evflag)
 
       double dLogV = dtv*vnnr*rinv;
       double dLogS = dtv*vttr*rinv;
-      
-      // increment some diagnostics
-      omega[i][0] += dLogV/2.;
-      omega[j][0] += dLogV/2.;
-      omega[i][1] += dLogS/2.;
-      omega[j][1] += dLogS/2.;
-        
+
       if (Fplus){
         Pplus = history[0] +  bulkModulus*dLogV; // full step stress
         Splus = history[1] + shearModulus*dLogS;
       } else {
         Pplus = 0.;
         Splus = 0.;
+//      Pplus =   bulkModulus*dLogV/5.; // 1/5 full step stress increment
+//      Splus =  shearModulus*dLogS/5.;
       }
 
       // test for tensile fracture, compressive flowstress, shear flowstress
       if (Pplus >= tensileFractureStress) { // brittle elastic fracture
-        Pplus = 0.; Fplus = 0.;
+//      Pplus = 0.; Fplus = 0;
+        Pplus = tensileFractureStress;
+        if (r/radsum > 5.) {Pplus = 0.; Fplus = 0;}
       } else if (Pplus <= compressiveYieldStress) { // perfectly plastic compressive flowstress
         Pplus = compressiveYieldStress;
       }

@@ -163,11 +163,24 @@ void FixNVESphereDemsiKokkos<DeviceType>::initial_integrate_item(const int i) co
       double D13 = ocean_density*ocean_drag*w13*ice_Area;
       double a = D12*dtf/(ice_Density*ice_Volume);
       double b = D13*dtf/(ice_Density*ice_Volume);
-
+/*
       // fixed u2,u3 form:
       double rden = 1./(1. + a + b);
       double up1 = (u1 + a*u2 + b*u3)*rden;
       double vp1 = (v1 + a*v2 + b*v3)*rden;
+*/
+        double c = D12*dtf/(atmos_density*ice_Volume);
+        double d = D13*dtf/(ocean_density*ice_Volume);
+        //A = {{1 + a + b,    -a,    -b},
+        //     {       -c, 1 + c,     0},
+        //     {       -d,     0, 1 + d}};
+        //B = Inverse[A]
+        double rden = 1./(1. + a + b + c + b*c + d + a*d + c*d);
+        double B11 = (1. + c + d + c*d);
+        double B12 = (a + a*d);
+        double B13 = (b + b*c);
+        double up1 = (B11*u1 + B12*u2 + B13*u3)*rden;
+        double vp1 = (B11*v1 + B12*v2 + B13*v3)*rden;
 
       // add the coriolis acceleration
       double cdt = coriolis(i)*dtf*rden;
@@ -276,10 +289,6 @@ void FixNVESphereDemsiKokkos<DeviceType>::final_integrate_item(const int i) cons
       double vp1 = vn(i,1);
       double wp1 = vn(i,2);
 
-      x(i,0) += dtv * (up1 - v(i,0));  // full step with vn vel
-      x(i,1) += dtv * (vp1 - v(i,1));
-      orientation(i) += dtv * (wp1 - omega(i,2));
-
       // half step acceleration with time(n+1) forces
       double dtm = dtf/rmass(i);
       double dvx = dtm*f(i,0);
@@ -305,11 +314,24 @@ void FixNVESphereDemsiKokkos<DeviceType>::final_integrate_item(const int i) cons
       double D13 = ocean_density*ocean_drag*w13*ice_Area;
       double a = D12*dtf/(ice_Density*ice_Volume);
       double b = D13*dtf/(ice_Density*ice_Volume);
-
+/*
       // fixed u2,u3 form:
       double rden = 1./(1. + a + b);
       up1 = (u1 + a*u2 + b*u3)*rden;
       vp1 = (v1 + a*v2 + b*v3)*rden;
+*/
+        double c = D12*dtf/(atmos_density*ice_Volume);
+        double d = D13*dtf/(ocean_density*ice_Volume);
+        //A = {{1 + a + b,    -a,    -b},
+        //     {       -c, 1 + c,     0},
+        //     {       -d,     0, 1 + d}};
+        //B = Inverse[A]
+        double rden = 1./(1. + a + b + c + b*c + d + a*d + c*d);
+        double B11 = (1. + c + d + c*d);
+        double B12 = (a + a*d);
+        double B13 = (b + b*c);
+        up1 = (B11*u1 + B12*u2 + B13*u3)*rden;
+        vp1 = (B11*v1 + B12*v2 + B13*v3)*rden;
 
       // add the coriolis acceleration
       double cdt = coriolis(i)*dtf*rden;
@@ -317,10 +339,6 @@ void FixNVESphereDemsiKokkos<DeviceType>::final_integrate_item(const int i) cons
       v(i,0) = (up1 + cdt*vp1)*cden;
       v(i,1) = (vp1 - cdt*up1)*cden;
       omega(i,2) = wp1 + dvz;
-      
-      x(i,0) += dtv * (v(i,0) - up1);  // full step with time(n + 1) vel
-      x(i,1) += dtv * (v(i,1) - vp1);
-      orientation(i) += dtv * dvz;
 
     } // end if (mask(i) & groupbit)
 
