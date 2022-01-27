@@ -660,7 +660,7 @@ void PairGranHopkinsKokkos<DeviceType>::compute_nonbonded_kokkos(int i, int j, i
 
    F_FLOAT ndisp, dispmag, scalefac;
    F_FLOAT ftx, fty, ftmag, ftcrit;
-   F_FLOAT var1,var2;
+   F_FLOAT var1, var2, disp_tx, disp_ty, prjmag;
 
    F_FLOAT hstar = 0.3;
 
@@ -818,30 +818,35 @@ void PairGranHopkinsKokkos<DeviceType>::compute_nonbonded_kokkos(int i, int j, i
      if (HISTORYUPDATE){
        d_firsthistory(i,size_history*jj) = fnx;
        d_firsthistory(i,size_history*jj+1) = fny;
-       ndisp = nx*d_firsthistory(i,size_history*jj+2) + ny*d_firsthistory(i,size_history*jj+3);
-       var1 = d_firsthistory(i,size_history*jj+2);
-       var2 = d_firsthistory(i,size_history*jj+3);
-       dispmag =sqrt(var1*var1 + var2*var2); 
-       denom = dispmag - ndisp;
-       if (ndisp > EPSILON && denom != 0){
-          scalefac = dispmag/denom;
-          d_firsthistory(i,size_history*jj+2) -= ndisp*nx;
-          d_firsthistory(i,size_history*jj+3) -= ndisp*ny;
-          d_firsthistory(i,size_history*jj+2) *= scalefac;
-          d_firsthistory(i,size_history*jj+3) *= scalefac;
-        }
-        d_firsthistory(i,size_history*jj+2) += vtx*update_dt;
-        d_firsthistory(i,size_history*jj+3) += vty*update_dt;
+       disp_tx = d_firsthistory(i,size_history*jj+2);
+       disp_ty = d_firsthistory(i,size_history*jj+3);
+       ndisp = nx*disp_tx + ny*disp_ty; //Tangential displacement in normal direction
+       if (fabs(ndisp) > EPSILON){
+         dispmag = sqrt(disp_tx*disp_tx + disp_ty*disp_ty);
+         //Remove component along normal direction
+         disp_tx -= ndisp*nx;
+         disp_ty -= ndisp*ny;
 
-	 }
+         //Rescale to preserve magnitude
+         prjmag = sqrt(disp_tx*disp_tx + disp_ty*disp_ty);
+         if (prjmag > 0) scalefac = dispmag/prjmag;
+         else scalefac = 0;
+         disp_tx *= scalefac;
+         disp_ty *= scalefac;
+         d_firsthistory(i,size_history*jj+2) = disp_tx;
+         d_firsthistory(i,size_history*jj+3) = disp_ty;
+       }
+       d_firsthistory(i,size_history*jj+2) += vtx*update_dt;
+       d_firsthistory(i,size_history*jj+3) += vty*update_dt;
+     }
 
-     var1 = d_firsthistory(i,size_history*jj+2);
-     var2 = d_firsthistory(i,size_history*jj+3);
-     dispmag =sqrt(var1*var1 + var2*var2); 
+     disp_tx = d_firsthistory(i,size_history*jj+2);
+     disp_ty = d_firsthistory(i,size_history*jj+3);
+     dispmag =sqrt(disp_tx*disp_tx + disp_ty*disp_ty);
 
      // total tangential force
-     ftx = - (kt0*var1 + damp_tangential*vtx);
-     fty = - (kt0*var2 + damp_tangential*vty);
+     ftx = - (kt0*disp_tx + damp_tangential*vtx);
+     fty = - (kt0*disp_ty + damp_tangential*vty);
 
      ftmag = sqrt(ftx*ftx + fty*fty);
      ftcrit = friction_tangential*fabs(contactForce);
@@ -849,8 +854,8 @@ void PairGranHopkinsKokkos<DeviceType>::compute_nonbonded_kokkos(int i, int j, i
        if (dispmag != 0){
          ftx *= ftcrit/ftmag;
          fty *= ftcrit/ftmag;
-         d_firsthistory(i,size_history*jj+2) = -(ftcrit + damp_tangential*vtx)/kt0;
-         d_firsthistory(i,size_history*jj+3) = -(ftcrit + damp_tangential*vty)/kt0;
+         d_firsthistory(i,size_history*jj+2) = -(ftx + damp_tangential*vtx)/kt0;
+         d_firsthistory(i,size_history*jj+3) = -(fty + damp_tangential*vty)/kt0;
        }
        else ftx = fty = 0;
      }

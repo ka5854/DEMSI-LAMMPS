@@ -161,7 +161,7 @@ void PairGranHopkins::compute_nonbonded(double *history, int* touch, int i, int 
   double fx, fy;
   double ncrossF;
 
-  double ndisp, dispmag, scalefac;
+  double ndisp, dispmag, scalefac, disp_tx, disp_ty, prjmag;
   double ftx, fty, ftmag, ftcrit;
 
   int historyupdate = 1;
@@ -264,15 +264,23 @@ void PairGranHopkins::compute_nonbonded(double *history, int* touch, int i, int 
     if (historyupdate){
       history[0] = fnx;
       history[1] = fny;
-      ndisp = nx*history[2] + ny*history[3];
-      dispmag =sqrt( history[2]*history[2] + history[3]*history[3]);
-      denom = dispmag - ndisp;
-      if (ndisp > EPSILON && denom != 0){
-        scalefac = dispmag/denom;
-        history[2] -= ndisp*nx;
-        history[3] -= ndisp*ny;
-        history[2] *= scalefac;
-        history[3] *= scalefac;
+      disp_tx = history[2];
+      disp_ty = history[3];
+      ndisp = nx*disp_tx + ny*disp_ty;
+      if (fabs(ndisp) > EPSILON){
+        dispmag = disp_tx*disp_tx + disp_ty*disp_ty;
+        //Remove component along normal direction
+        disp_tx -= ndisp*nx;
+        disp_ty -= ndisp*ny;
+
+        //Rescale to preserve magnitude
+        prjmag = sqrt(disp_tx*disp_tx + disp_ty*disp_ty);
+        if (prjmag > 0) scalefac = dispmag/prjmag;
+        else scalefac = 0;
+        disp_tx *= scalefac;
+        disp_ty *= scalefac;
+        history[2] = disp_tx;
+        history[3] = disp_ty;
       }
       history[2] += vtx*update->dt;
       history[3] += vty*update->dt;
@@ -291,8 +299,8 @@ void PairGranHopkins::compute_nonbonded(double *history, int* touch, int i, int 
       if (dispmag != 0){
         ftx *= ftcrit/ftmag;
         fty *= ftcrit/ftmag;
-        history[2] = -(ftcrit + damp_tangential*vtx)/kt;
-        history[3] = -(ftcrit + damp_tangential*vty)/kt;
+        history[2] = -(ftx + damp_tangential*vtx)/kt;
+        history[3] = -(fty + damp_tangential*vty)/kt;
       }
       else ftx = fty = 0;
     }
