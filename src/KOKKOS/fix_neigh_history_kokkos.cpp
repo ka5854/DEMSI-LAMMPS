@@ -145,33 +145,32 @@ void FixNeighHistoryKokkos<DeviceType>::pre_exchange_item(const int &ii) const
 	if (m < maxpartner) {
 	  d_partner(j,m) = tag[i];
           if (nondefault_history_transfer) {
-            if (d_firstvalue(i,dnum*jj+8) < d_firstvalue(i,dnum*jj+9)) {
-	      d_valuepartner(j,dnum*m) = d_firstvalue(i,dnum*jj+4);
-	      d_valuepartner(j,dnum*m+1) = d_firstvalue(i,dnum*jj+5);
-	      d_valuepartner(j,dnum*m+2) = d_firstvalue(i,dnum*jj+6);
-	      d_valuepartner(j,dnum*m+3) = d_firstvalue(i,dnum*jj+7);
+            if (d_firstvalue(i,dnum*jj) < d_firstvalue(i,dnum*jj+1)) {
+              d_valuepartner(j,dnum*m+2) = d_firstvalue(i,dnum*jj+4);
+              d_valuepartner(j,dnum*m+3) = d_firstvalue(i,dnum*jj+5);
+              d_valuepartner(j,dnum*m+4) = d_firstvalue(i,dnum*jj+6);
+              d_valuepartner(j,dnum*m+5) = d_firstvalue(i,dnum*jj+7);
 
-	      d_valuepartner(j,dnum*m+4) = d_firstvalue(i,dnum*jj);
-	      d_valuepartner(j,dnum*m+5) = d_firstvalue(i,dnum*jj+1);
-	      d_valuepartner(j,dnum*m+6) = d_firstvalue(i,dnum*jj+2);
-	      d_valuepartner(j,dnum*m+7) = d_firstvalue(i,dnum*jj+3);
+              d_valuepartner(j,dnum*m+6) = d_firstvalue(i,dnum*jj+2);
+              d_valuepartner(j,dnum*m+7) = d_firstvalue(i,dnum*jj+3);
+              d_valuepartner(j,dnum*m+8) = d_firstvalue(i,dnum*jj+4);
+              d_valuepartner(j,dnum*m+9) = d_firstvalue(i,dnum*jj+5);
 
-	      d_valuepartner(j,dnum*m+8)  = d_firstvalue(i,dnum*jj+8);
-	      d_valuepartner(j,dnum*m+9)  = d_firstvalue(i,dnum*jj+9);
-	      d_valuepartner(j,dnum*m+10) = d_firstvalue(i,dnum*jj+10);
-	      d_valuepartner(j,dnum*m+11) = d_firstvalue(i,dnum*jj+11);
-            } else {
-	      d_valuepartner(j,dnum*m)   = -d_firstvalue(i,dnum*jj);
-	      d_valuepartner(j,dnum*m+1) = -d_firstvalue(i,dnum*jj+1);
-	      d_valuepartner(j,dnum*m+2) = -d_firstvalue(i,dnum*jj+2);
-	      d_valuepartner(j,dnum*m+3) = -d_firstvalue(i,dnum*jj+3);
-
-	      d_valuepartner(j,dnum*m+4) = d_firstvalue(i,dnum*jj+4);
-	      d_valuepartner(j,dnum*m+5) = d_firstvalue(i,dnum*jj+5);
-	      d_valuepartner(j,dnum*m+8) = d_firstvalue(i,dnum*jj+8);
-	      d_valuepartner(j,dnum*m+9) = d_firstvalue(i,dnum*jj+9);
               d_valuepartner(j,dnum*m+10) = d_firstvalue(i,dnum*jj+10);
               d_valuepartner(j,dnum*m+11) = d_firstvalue(i,dnum*jj+11);
+            } else {
+              d_valuepartner(j,dnum*m+2) = -d_firstvalue(i,dnum*jj+2);
+              d_valuepartner(j,dnum*m+3) = -d_firstvalue(i,dnum*jj+3);
+
+              d_valuepartner(j,dnum*m+4) = d_firstvalue(i,dnum*jj+4);
+              d_valuepartner(j,dnum*m+5) = d_firstvalue(i,dnum*jj+5);
+              d_valuepartner(j,dnum*m+6) = d_firstvalue(i,dnum*jj+6);
+              d_valuepartner(j,dnum*m+7) = d_firstvalue(i,dnum*jj+7);
+              d_valuepartner(j,dnum*m+8) = d_firstvalue(i,dnum*jj+8);
+              d_valuepartner(j,dnum*m+9) = d_firstvalue(i,dnum*jj+9);
+	      d_valuepartner(j,dnum*m+10) = d_firstvalue(i,dnum*jj+10);
+              d_valuepartner(j,dnum*m+11) = d_firstvalue(i,dnum*jj+11);
+
             }
           }
           else {
