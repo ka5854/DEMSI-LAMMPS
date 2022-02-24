@@ -14,6 +14,23 @@
    Contributing authors: Dan S. Bolintineanu (SNL), Adrian K. Turner (LANL)
    ------------------------------------------------------------------------- */
 
+//For bonded pairs:
+// history[0,1]: chi1, chi2
+// history[2-9]: x,y components of s1i, s2i, s1j, s2j
+// history[10]: bond length
+// history[11]: bond thickness, h
+
+//For unbonded pairs:
+// history[0,1]: chi1, chi2
+// history[2,3]: accumulated tangential displacement at contact, x and y
+// history[4]  : delta_0: initial overlap at bond break
+// history[5]  : previousForceConv
+// history[6]  : ridgeSlipConv
+// history[7]  : ridgeSlipUsedConv
+// history[8]  :
+// history[9]  :
+// history[10] :
+
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
