@@ -36,6 +36,10 @@ class FixNVESphereDemsi : public FixNVE {
   // if they are location/temperature dependent, they would have
   // to be made into per-particle properties)
   double ocean_drag, ocean_density;
+  double atmos_drag, atmos_density;
+  int drag_force_integration_flag;
+  int time_integration_flag;
+  double Hugoniot_Vel_Jump;
 
  protected:
   double inertia;

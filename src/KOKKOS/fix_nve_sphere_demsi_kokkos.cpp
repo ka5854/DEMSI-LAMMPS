@@ -30,8 +30,11 @@ FixNVESphereDemsiKokkos<DeviceType>::FixNVESphereDemsiKokkos(LAMMPS *lmp, int na
   atomKK = (AtomKokkos *)atom;
   execution_space = ExecutionSpaceFromDevice<DeviceType>::space;
 
-  datamask_read = X_MASK | V_MASK| F_MASK | OMEGA_MASK | TORQUE_MASK | RMASS_MASK | RADIUS_MASK | MASK_MASK | THICKNESS_MASK;
-  datamask_modify = X_MASK | V_MASK | OMEGA_MASK | THICKNESS_MASK;
+  datamask_read = X_MASK | V_MASK| F_MASK | OMEGA_MASK | TORQUE_MASK |
+   RMASS_MASK | RADIUS_MASK | MASK_MASK | THICKNESS_MASK | VN_MASK; // adding vn
+
+  datamask_modify = X_MASK | V_MASK | OMEGA_MASK |
+   THICKNESS_MASK | VN_MASK; // adding vn
 }
 
 /* ---------------------------------------------------------------------- */
@@ -78,6 +81,8 @@ void FixNVESphereDemsiKokkos<DeviceType>::initial_integrate(int vflag)
   ocean_vel = atomKK->k_ocean_vel.view<DeviceType>();
   bvector = atomKK->k_bvector.view<DeviceType>();
   forcing = atomKK->k_forcing.view<DeviceType>();
+  mean_thickness = atomKK->k_mean_thickness.view<DeviceType>();
+  vn = atomKK->k_vn.view<DeviceType>(); // adding vn
 
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
@@ -85,9 +90,6 @@ void FixNVESphereDemsiKokkos<DeviceType>::initial_integrate(int vflag)
   FixNVESphereDemsiKokkosInitialIntegrateFunctor<DeviceType> f(this); 
   Kokkos::parallel_for(nlocal,f);
 
-  // debug
-  //atomKK->sync(Host,ALL_MASK);
-  //atomKK->modified(Host,ALL_MASK);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -96,36 +98,110 @@ template <class DeviceType>
 KOKKOS_INLINE_FUNCTION
 void FixNVESphereDemsiKokkos<DeviceType>::initial_integrate_item(const int i) const
 {
-  const double dtfrotate = dtf;
 
-  if (mask(i) & groupbit) {
-    const double vel_diff = sqrt((ocean_vel(i,0)-v(i,0))*(ocean_vel(i,0)-v(i,0)) +
-         (ocean_vel(i,1)-v(i,1))*(ocean_vel(i,1)-v(i,1)));
-    const double D = ice_area(i)*ocean_drag*ocean_density*vel_diff;
-    const double m_prime = rmass(i)/dtf;
-    const double a00 = m_prime+D;
-    const double a11 = a00;
-    const double a10 = rmass(i)*coriolis(i);
-    const double a01 = -a10;
+  if (drag_force_integration_flag == 0) { // implicit ocean, explicit atmos
 
-    const double b0 = m_prime*v(i,0) + f(i,0) + bvector(i,0) + forcing(i,0) + D*ocean_vel(i,0);
-    const double b1 = m_prime*v(i,1) + f(i,1) + bvector(i,1) + forcing(i,1) + D*ocean_vel(i,1);
+    const double dtfrotate = dtf;
 
-    const double detinv = 1.0/(a00*a11 - a01*a10);
-    v(i,0) = detinv*( a11*b0 - a01*b1);
-    v(i,1) = detinv*(-a10*b0 + a00*b1);
+    if (mask(i) & groupbit) {
 
-    x(i,0) += dtv * v(i,0);
-    x(i,1) += dtv * v(i,1);
+      const double vel_diff = sqrt((ocean_vel(i,0)-v(i,0))*(ocean_vel(i,0)-v(i,0)) +
+           (ocean_vel(i,1)-v(i,1))*(ocean_vel(i,1)-v(i,1)));
+      const double D = ice_area(i)*ocean_drag*ocean_density*vel_diff;
+      const double m_prime = rmass(i)/dtf;
+      const double a00 = m_prime+D;
+      const double a11 = a00;
+      const double a10 = rmass(i)*coriolis(i);
+      const double a01 = -a10;
 
-    const double dtirotate = dtfrotate / (momentOfInertia(i));
-    omega(i,2) += dtirotate * torque(i,2);
+      const double b0 = m_prime*v(i,0) + f(i,0) + bvector(i,0) + forcing(i,0) + D*ocean_vel(i,0);
+      const double b1 = m_prime*v(i,1) + f(i,1) + bvector(i,1) + forcing(i,1) + D*ocean_vel(i,1);
 
-    orientation(i) += dtv * omega(i,2);
+      const double detinv = 1.0/(a00*a11 - a01*a10);
+      v(i,0) = detinv*( a11*b0 - a01*b1);
+      v(i,1) = detinv*(-a10*b0 + a00*b1);
 
-  }
-  
-}
+      x(i,0) += dtv * v(i,0);
+      x(i,1) += dtv * v(i,1);
+
+      const double dtirotate = dtfrotate / (momentOfInertia(i));
+      omega(i,2) += dtirotate * torque(i,2);
+      orientation(i) += dtv * omega(i,2);
+
+      // put v, omega into vn
+      vn(i,0) =     v(i,0);
+      vn(i,1) =     v(i,1);
+      vn(i,2) = omega(i,2);
+
+    } // end if(mask(i) & groupbit)
+
+  } else if (drag_force_integration_flag == 1) { // implicit ocean, implicit atmos
+
+    if (mask(i) & groupbit) {
+
+      // acceleration with time(n) forces
+      double dtm = dtf/rmass(i);
+      double dvx = dtm*f(i,0);
+      double dvy = dtm*f(i,1);
+      double dvz = dtf*torque(i,2)/momentOfInertia(i);
+
+      // add the forcing
+      double u1 = v(i,0) + dvx + dtm*forcing(i,0);
+      double v1 = v(i,1) + dvy + dtm*forcing(i,1);
+      double u2 = bvector(i,0);
+      double v2 = bvector(i,1);
+      double u3 = ocean_vel(i,0);
+      double v3 = ocean_vel(i,1);
+
+      // 3-field finite-rate momentum exchange: field 1-ice, 2-atmosphere, 3-ocean
+      double ice_Area = ice_area(i);
+      double ice_Volume = fmax(1.e-99, ice_Area*mean_thickness(i));
+      double ice_Density = rmass(i)/ice_Volume;
+      double w12 = sqrt(pow(u2-u1,2) + pow(v2-v1,2)) + Hugoniot_Vel_Jump;
+      double w13 = sqrt(pow(u3-u1,2) + pow(v3-v1,2)) + Hugoniot_Vel_Jump;
+      double D12 = atmos_density*atmos_drag*w12*ice_Area;
+      double D13 = ocean_density*ocean_drag*w13*ice_Area;
+      double a = D12*dtf/(ice_Density*ice_Volume);
+      double b = D13*dtf/(ice_Density*ice_Volume);
+/*
+      // fixed u2,u3 form:
+      double rden = 1./(1. + a + b);
+      double up1 = (u1 + a*u2 + b*u3)*rden;
+      double vp1 = (v1 + a*v2 + b*v3)*rden;
+*/
+        double c = D12*dtf/(atmos_density*ice_Volume);
+        double d = D13*dtf/(ocean_density*ice_Volume);
+        //A = {{1 + a + b,    -a,    -b},
+        //     {       -c, 1 + c,     0},
+        //     {       -d,     0, 1 + d}};
+        //B = Inverse[A]
+        double rden = 1./(1. + a + b + c + b*c + d + a*d + c*d);
+        double B11 = (1. + c + d + c*d);
+        double B12 = (a + a*d);
+        double B13 = (b + b*c);
+        double up1 = (B11*u1 + B12*u2 + B13*u3)*rden;
+        double vp1 = (B11*v1 + B12*v2 + B13*v3)*rden;
+
+      // add the coriolis acceleration
+      double cdt = coriolis(i)*dtf*rden;
+      double cden = 1./(1. + cdt*cdt);
+      v(i,0) = (up1 + cdt*vp1)*cden;
+      v(i,1) = (vp1 - cdt*up1)*cden;
+      omega(i,2) += dvz;
+
+      x(i,0) += dtv * v(i,0);  // full step with time(n + 1/2) vel
+      x(i,1) += dtv * v(i,1);
+      orientation(i) += dtv * omega(i,2);
+
+      // put v, omega into vn
+      vn(i,0) =     v(i,0);
+      vn(i,1) =     v(i,1);
+      vn(i,2) = omega(i,2);
+
+    } // end if (mask(i) & groupbit)
+
+  } // end if(int(drag_force_integration_flag) == 0)
+} // end initial_integrate_item
 
 /* ---------------------------------------------------------------------- */
 
@@ -133,7 +209,6 @@ template<class DeviceType>
 void FixNVESphereDemsiKokkos<DeviceType>::final_integrate()
 {
   atomKK->sync(execution_space,datamask_read);
-  //atomKK->sync(execution_space,ALL_MASK);
   atomKK->modified(execution_space,datamask_modify);
 
   v = atomKK->k_v.view<DeviceType>();
@@ -150,18 +225,14 @@ void FixNVESphereDemsiKokkos<DeviceType>::final_integrate()
   ocean_vel = atomKK->k_ocean_vel.view<DeviceType>();
   bvector = atomKK->k_bvector.view<DeviceType>();
   forcing = atomKK->k_forcing.view<DeviceType>();
+  mean_thickness = atomKK->k_mean_thickness.view<DeviceType>();
+  vn = atomKK->k_vn.view<DeviceType>(); // adding vn
 
   int nlocal = atom->nlocal;
   if (igroup == atom->firstgroup) nlocal = atom->nfirst;
 
   FixNVESphereDemsiKokkosFinalIntegrateFunctor<DeviceType> f(this);
   Kokkos::parallel_for(nlocal,f);
-
-  // debug
- // atomKK->sync(Host,datamask_read);
- // atomKK->modified(Host,datamask_modify);
-  //atomKK->sync(Host,ALL_MASK);
- // atomKK->modified(Host,ALL_MASK);
 
 }
 
@@ -171,32 +242,117 @@ template <class DeviceType>
 KOKKOS_INLINE_FUNCTION
 void FixNVESphereDemsiKokkos<DeviceType>::final_integrate_item(const int i) const
 {
-  const double dtfrotate = dtf;
+  if (drag_force_integration_flag == 0) { // implicit ocean, explicit atmos
 
-  if (mask(i) & groupbit) {
+    const double dtfrotate = dtf;
 
-    const double vel_diff = sqrt((ocean_vel(i,0)-v(i,0))*(ocean_vel(i,0)-v(i,0)) +
-         (ocean_vel(i,1)-v(i,1))*(ocean_vel(i,1)-v(i,1)));
-    const double D = ice_area(i)*ocean_drag*ocean_density*vel_diff;
-    const double m_prime = rmass(i)/dtf;
-    const double a00 = m_prime+D;
-    const double a11 = a00;
-    const double a10 = rmass(i)*coriolis(i);
-    const double a01 = -a10;
+    if (mask(i) & groupbit) {
 
-    const double b0 = m_prime*v(i,0) + f(i,0) + bvector(i,0) + forcing(i,0) + D*ocean_vel(i,0);
-    const double b1 = m_prime*v(i,1) + f(i,1) + bvector(i,1) + forcing(i,1) + D*ocean_vel(i,1);
+      // get v, omega from vn
+          v(i,0) = vn(i,0);
+          v(i,1) = vn(i,1);
+      omega(i,2) = vn(i,2);
 
+      const double vel_diff = sqrt((ocean_vel(i,0)-v(i,0))*(ocean_vel(i,0)-v(i,0)) +
+           (ocean_vel(i,1)-v(i,1))*(ocean_vel(i,1)-v(i,1)));
+      const double D = ice_area(i)*ocean_drag*ocean_density*vel_diff;
+      const double m_prime = rmass(i)/dtf;
+      const double a00 = m_prime+D;
+      const double a11 = a00;
+      const double a10 = rmass(i)*coriolis(i);
+      const double a01 = -a10;
 
-    const double detinv = 1.0/(a00*a11 - a01*a10);
-    v(i,0) = detinv*( a11*b0 - a01*b1);
-    v(i,1) = detinv*(-a10*b0 + a00*b1);
+      const double b0 = m_prime*v(i,0) + f(i,0) + bvector(i,0) + forcing(i,0) + D*ocean_vel(i,0);
+      const double b1 = m_prime*v(i,1) + f(i,1) + bvector(i,1) + forcing(i,1) + D*ocean_vel(i,1);
 
-    const double dtirotate = dtfrotate / (momentOfInertia(i));
-    omega(i,2) += dtirotate * torque(i,2);
+      const double detinv = 1.0/(a00*a11 - a01*a10);
+      v(i,0) = detinv*( a11*b0 - a01*b1);
+      v(i,1) = detinv*(-a10*b0 + a00*b1);
 
-  }
-}
+      const double dtirotate = dtfrotate / (momentOfInertia(i));
+      omega(i,2) += dtirotate * torque(i,2);
+    }
+
+    // zero out diagnostics on nonmobile elements
+    if(!(mask(i)&groupbit)) {
+            vn(i,0) =     vn(i,1) =     vn(i,2) = 0.;
+        torque(i,0) = torque(i,1) = torque(i,2) = 0.;
+         omega(i,0) =  omega(i,1) =  omega(i,2) = 0.;
+    }
+
+  } else if (drag_force_integration_flag == 1) {
+
+    if (mask(i) & groupbit) {
+
+      // get v, omega from vn
+      double up1 = vn(i,0);
+      double vp1 = vn(i,1);
+      double wp1 = vn(i,2);
+
+      // half step acceleration with time(n+1) forces
+      double dtm = dtf/rmass(i);
+      double dvx = dtm*f(i,0);
+      double dvy = dtm*f(i,1);
+      double dvz = dtf*torque(i,2)/momentOfInertia(i);
+
+      // add the forcing
+      double u1 = up1 + dvx + dtm*forcing(i,0);
+      double v1 = vp1 + dvy + dtm*forcing(i,1);
+
+      double u2 = bvector(i,0);
+      double v2 = bvector(i,1);
+      double u3 = ocean_vel(i,0);
+      double v3 = ocean_vel(i,1);
+
+      // 3-field finite-rate momentum exchange: field 1-ice, 2-atmosphere, 3-ocean
+      double ice_Area = ice_area(i);
+      double ice_Volume = fmax(1.e-99, ice_Area*mean_thickness(i));
+      double ice_Density = rmass(i)/ice_Volume;
+      double w12 = sqrt(pow(u2-u1,2) + pow(v2-v1,2)) + Hugoniot_Vel_Jump;
+      double w13 = sqrt(pow(u3-u1,2) + pow(v3-v1,2)) + Hugoniot_Vel_Jump;
+      double D12 = atmos_density*atmos_drag*w12*ice_Area;
+      double D13 = ocean_density*ocean_drag*w13*ice_Area;
+      double a = D12*dtf/(ice_Density*ice_Volume);
+      double b = D13*dtf/(ice_Density*ice_Volume);
+/*
+      // fixed u2,u3 form:
+      double rden = 1./(1. + a + b);
+      up1 = (u1 + a*u2 + b*u3)*rden;
+      vp1 = (v1 + a*v2 + b*v3)*rden;
+*/
+        double c = D12*dtf/(atmos_density*ice_Volume);
+        double d = D13*dtf/(ocean_density*ice_Volume);
+        //A = {{1 + a + b,    -a,    -b},
+        //     {       -c, 1 + c,     0},
+        //     {       -d,     0, 1 + d}};
+        //B = Inverse[A]
+        double rden = 1./(1. + a + b + c + b*c + d + a*d + c*d);
+        double B11 = (1. + c + d + c*d);
+        double B12 = (a + a*d);
+        double B13 = (b + b*c);
+        up1 = (B11*u1 + B12*u2 + B13*u3)*rden;
+        vp1 = (B11*v1 + B12*v2 + B13*v3)*rden;
+
+      // add the coriolis acceleration
+      double cdt = coriolis(i)*dtf*rden;
+      double cden = 1./(1. + cdt*cdt);
+      v(i,0) = (up1 + cdt*vp1)*cden;
+      v(i,1) = (vp1 - cdt*up1)*cden;
+      omega(i,2) = wp1 + dvz;
+
+    } // end if (mask(i) & groupbit)
+
+    // zero out diagnostics on nonmoving elements
+    if(!(mask(i)&groupbit)) {
+            vn(i,0) =     vn(i,1) =     vn(i,2) = 0.;
+        torque(i,0) = torque(i,1) = torque(i,2) = 0.;
+         omega(i,0) =  omega(i,1) =  omega(i,2) = 0.;
+    }
+
+  } // end if(int(drag_force_integration_flag) == 0)
+} // end final_integrate_item
+
+/* ---------------------------------------------------------------------- */
 
 namespace LAMMPS_NS {
 template class FixNVESphereDemsiKokkos<LMPDeviceType>;
@@ -204,3 +360,5 @@ template class FixNVESphereDemsiKokkos<LMPDeviceType>;
 template class FixNVESphereDemsiKokkos<LMPHostType>;
 #endif
 }
+
+/* ---------------------------------------------------------------------- */
