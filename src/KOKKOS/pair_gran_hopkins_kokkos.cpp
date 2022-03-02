@@ -14,6 +14,23 @@
    Contributing authors: Dan S. Bolintineanu (SNL), Adrian K. Turner (LANL)
    ------------------------------------------------------------------------- */
 
+//For bonded pairs:
+// history[0,1]: chi1, chi2
+// history[2-9]: x,y components of s1i, s2i, s1j, s2j
+// history[10]: bond length
+// history[11]: bond thickness, h
+
+//For unbonded pairs:
+// history[0,1]: chi1, chi2
+// history[2,3]: accumulated tangential displacement at contact, x and y
+// history[4]  : delta_0: initial overlap at bond break
+// history[5]  : previousForceConv
+// history[6]  : ridgeSlipConv
+// history[7]  : ridgeSlipUsedConv
+// history[8]  :
+// history[9]  :
+// history[10] :
+
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -327,8 +344,8 @@ void PairGranHopkinsKokkos<DeviceType>::operator()(TagPairGranHopkinsCompute<NEI
     F_FLOAT torque_i = 0.0;
     F_FLOAT torque_j = 0.0;
 
-    F_FLOAT chi1 = d_firsthistory(i,size_history*jj+8);
-    F_FLOAT chi2 = d_firsthistory(i,size_history*jj+9);
+    F_FLOAT chi1 = d_firsthistory(i,size_history*jj);
+    F_FLOAT chi2 = d_firsthistory(i,size_history*jj+1);
     if (chi1 >= chi2){ // Un-bonded, chi1 >= chi2
       compute_nonbonded_kokkos<NEIGHFLAG,NEWTON_PAIR,HISTORYUPDATE>(i,j,jj,fx,fy,torque_i,torque_j);
     }
@@ -680,12 +697,9 @@ void PairGranHopkinsKokkos<DeviceType>::compute_nonbonded_kokkos(int i, int j, i
    else{
      if (!d_firsttouch(i,jj)){ //If this is first contact
           d_firsttouch(i,jj) = 1;
-          d_firsthistory(i,size_history*jj) = 0;
-          d_firsthistory(i,size_history*jj+1) = 0;
-          d_firsthistory(i,size_history*jj+2) = 0;
-          d_firsthistory(i,size_history*jj+3) = 0;
-          d_firsthistory(i,size_history*jj+4) = hprime_0;
-          d_firsthistory(i,size_history*jj+5) = 0;
+        for (int k = 2; k < size_history; k++) {
+          d_firsthistory(i,size_history*jj+k) = 0;
+        }
      }
 
      r = sqrt(rsq);
@@ -702,7 +716,7 @@ void PairGranHopkinsKokkos<DeviceType>::compute_nonbonded_kokkos(int i, int j, i
      V_FLOAT vrx = v(i,0) - v(j,0);
      V_FLOAT vry = v(i,1) - v(j,1);
 
-     delta = radsum - r - d_firsthistory(i,size_history*jj+5);
+     delta = radsum - r - d_firsthistory(i,size_history*jj+4);
      if (delta < 0) return ; //delta = 0;
 
      // Compute tangential force
@@ -749,9 +763,9 @@ void PairGranHopkinsKokkos<DeviceType>::compute_nonbonded_kokkos(int i, int j, i
        kt0 = Gmod/L*(1/(1/mean_thickness(i) + 1/mean_thickness(j)));
        F_FLOAT particleRadius = 5000.0;
 
-       F_FLOAT previousForce = d_firsthistory(i,size_history*jj+7);
-       F_FLOAT ridgeSlip     = d_firsthistory(i,size_history*jj+10);
-       F_FLOAT ridgeSlipUsed = d_firsthistory(i,size_history*jj+11);
+       F_FLOAT previousForce = d_firsthistory(i,size_history*jj+5);
+       F_FLOAT ridgeSlip     = d_firsthistory(i,size_history*jj+6);
+       F_FLOAT ridgeSlipUsed = d_firsthistory(i,size_history*jj+7);
 
        hopkins_ridging_model(NEWTON_PAIR || j < nlocal,
            delta,
@@ -782,42 +796,17 @@ void PairGranHopkinsKokkos<DeviceType>::compute_nonbonded_kokkos(int i, int j, i
            previousForce,
            contactForce);
        if (HISTORYUPDATE){
-         d_firsthistory(i,size_history*jj+7)  = previousForce;
-         d_firsthistory(i,size_history*jj+10) = ridgeSlip;
-         d_firsthistory(i,size_history*jj+11) = ridgeSlipUsed;
+         d_firsthistory(i,size_history*jj+5) = previousForce;
+         d_firsthistory(i,size_history*jj+6) = ridgeSlip;
+         d_firsthistory(i,size_history*jj+7) = ridgeSlipUsed;
        }
      }
-     // Compute plastic normal force
-     /*hprime = d_firsthistory(i,size_history*jj+4);
-     ke = Emod/L*(1/(1/mean_thickness(i) + 1/mean_thickness(j)));
-     hmin = MIN(min_thickness(i), min_thickness(j));
-     if (hprime < hstar){
-        kr = 26126*hprime;
-        kp = 928*hprime*hprime;
-     }
-     else{
-        kr = kp = hprime*sig_c;
-     }
 
-     num = d_firsthistory(i,size_history*jj)/(kp*update_dt) + delta_dot*L + delta*L*ke/damp_normal + ke*kr/(damp_normal*kp);
-     denom = 1/(kp*update_dt) + 1/damp_normal*(1+ke/kp);
-     fnmag_plastic = num/denom;
-
-     // Elastic normal force
-     fnmag_elastic = ke*delta*L + damp_normal*delta_dot*L;
-
-     if (fabs(fnmag_elastic) < fabs(fnmag_plastic))
-       fnmag = fnmag_elastic;
-     else
-     fnmag = fnmag_plastic;*/
-
-     fnx = contactForce*nx;//fnx = fnmag*nx;
-     fny = contactForce*ny;//fny = fnmag*ny;
+     fnx = contactForce*nx;
+     fny = contactForce*ny;
 
      // update tangential displacement, rotate if needed
      if (HISTORYUPDATE){
-       d_firsthistory(i,size_history*jj) = fnx;
-       d_firsthistory(i,size_history*jj+1) = fny;
        disp_tx = d_firsthistory(i,size_history*jj+2);
        disp_ty = d_firsthistory(i,size_history*jj+3);
        ndisp = nx*disp_tx + ny*disp_ty; //Tangential displacement in normal direction
@@ -889,8 +878,8 @@ void PairGranHopkinsKokkos<DeviceType>::compute_bonded_kokkos(int i, int j, int 
   F_FLOAT An, Bn, Cn, Dn, Bt, Ct, Dt, Bnj, Cnj, Dnj, Btj;
   F_FLOAT Fnmag, Ftmag, Nn, Nt, Nnj, Ntj;
 
-  F_FLOAT chi1 = d_firsthistory(i,size_history*jj+8);
-  F_FLOAT chi2 = d_firsthistory(i,size_history*jj+9);
+  F_FLOAT chi1 = d_firsthistory(i,size_history*jj);
+  F_FLOAT chi2 = d_firsthistory(i,size_history*jj+1);
   F_FLOAT chidiff, chidiff2, chidiff3;
 
   F_FLOAT sig_n1, sig_s1;
@@ -904,36 +893,36 @@ void PairGranHopkinsKokkos<DeviceType>::compute_bonded_kokkos(int i, int j, int 
   if (HISTORYUPDATE){
  
     // Update bond end points based on particle translations
-    d_firsthistory(i,size_history*jj)   += dt*v(i,0);
-    d_firsthistory(i,size_history*jj+1) += dt*v(i,1);
     d_firsthistory(i,size_history*jj+2) += dt*v(i,0);
     d_firsthistory(i,size_history*jj+3) += dt*v(i,1);
+    d_firsthistory(i,size_history*jj+4) += dt*v(i,0);
+    d_firsthistory(i,size_history*jj+5) += dt*v(i,1);
 
-    d_firsthistory(i,size_history*jj+4) += dt*v(j,0);
-    d_firsthistory(i,size_history*jj+5) += dt*v(j,1);
     d_firsthistory(i,size_history*jj+6) += dt*v(j,0);
     d_firsthistory(i,size_history*jj+7) += dt*v(j,1);
+    d_firsthistory(i,size_history*jj+8) += dt*v(j,0);
+    d_firsthistory(i,size_history*jj+9) += dt*v(j,1);
 
     // Update bond end points based on particle rotations
-    d_firsthistory(i,size_history*jj)   += -dt*omega(i,2)*(d_firsthistory(i,size_history*jj+1)-x(i,1));
-    d_firsthistory(i,size_history*jj+1) +=  dt*omega(i,2)*(d_firsthistory(i,size_history*jj)  -x(i,0));
     d_firsthistory(i,size_history*jj+2) += -dt*omega(i,2)*(d_firsthistory(i,size_history*jj+3)-x(i,1));
     d_firsthistory(i,size_history*jj+3) +=  dt*omega(i,2)*(d_firsthistory(i,size_history*jj+2)-x(i,0));
+    d_firsthistory(i,size_history*jj+4) += -dt*omega(i,2)*(d_firsthistory(i,size_history*jj+5)-x(i,1));
+    d_firsthistory(i,size_history*jj+5) +=  dt*omega(i,2)*(d_firsthistory(i,size_history*jj+4)-x(i,0));
 
-    d_firsthistory(i,size_history*jj+4) += -dt*omega(j,2)*(d_firsthistory(i,size_history*jj+5)-x(j,1));
-    d_firsthistory(i,size_history*jj+5) +=  dt*omega(j,2)*(d_firsthistory(i,size_history*jj+4)-x(j,0));
     d_firsthistory(i,size_history*jj+6) += -dt*omega(j,2)*(d_firsthistory(i,size_history*jj+7)-x(j,1));
     d_firsthistory(i,size_history*jj+7) +=  dt*omega(j,2)*(d_firsthistory(i,size_history*jj+6)-x(j,0));
+    d_firsthistory(i,size_history*jj+8) += -dt*omega(j,2)*(d_firsthistory(i,size_history*jj+9)-x(j,1));
+    d_firsthistory(i,size_history*jj+9) +=  dt*omega(j,2)*(d_firsthistory(i,size_history*jj+8)-x(j,0));
   }
 
   //Compute s_1, s_2, m, m_e, b_e
-  s1x = d_firsthistory(i,size_history*jj+4) - d_firsthistory(i,size_history*jj);
-  s1y = d_firsthistory(i,size_history*jj+5) - d_firsthistory(i,size_history*jj+1);
-  s2x = d_firsthistory(i,size_history*jj+6) - d_firsthistory(i,size_history*jj+2);
-  s2y = d_firsthistory(i,size_history*jj+7) - d_firsthistory(i,size_history*jj+3);
+  s1x = d_firsthistory(i,size_history*jj+6) - d_firsthistory(i,size_history*jj+2);
+  s1y = d_firsthistory(i,size_history*jj+7) - d_firsthistory(i,size_history*jj+3);
+  s2x = d_firsthistory(i,size_history*jj+8) - d_firsthistory(i,size_history*jj+4);
+  s2y = d_firsthistory(i,size_history*jj+9) - d_firsthistory(i,size_history*jj+5);
 
-  mx = d_firsthistory(i,size_history*jj+2) + 0.5*s2x - d_firsthistory(i,size_history*jj) - 0.5*s1x;
-  my = d_firsthistory(i,size_history*jj+3) + 0.5*s2y - d_firsthistory(i,size_history*jj+1) - 0.5*s1y;
+  mx = d_firsthistory(i,size_history*jj+4) + 0.5*s2x - d_firsthistory(i,size_history*jj+2) - 0.5*s1x;
+  my = d_firsthistory(i,size_history*jj+5) + 0.5*s2y - d_firsthistory(i,size_history*jj+3) - 0.5*s1y;
   mmag = sqrt(mx*mx + my*my);
   mex = mx/mmag;
   mey = my/mmag;
@@ -941,8 +930,8 @@ void PairGranHopkinsKokkos<DeviceType>::compute_bonded_kokkos(int i, int j, int 
   bex = mey;
   bey = -mex;
 
-  rx = d_firsthistory(i,size_history*jj)   + 0.5*s1x - x(i,0);
-  ry = d_firsthistory(i,size_history*jj+1) + 0.5*s1y - x(i,1);
+  rx = d_firsthistory(i,size_history*jj+2) + 0.5*s1x - x(i,0);
+  ry = d_firsthistory(i,size_history*jj+3) + 0.5*s1y - x(i,1);
 
   //Compute forces and torques
   Dn = s1x*bex + s1y*bey;
@@ -992,8 +981,8 @@ void PairGranHopkinsKokkos<DeviceType>::compute_bonded_kokkos(int i, int j, int 
   torque_j = 0;
   if (NEWTON_PAIR || j < nlocal){
 
-    rxj = d_firsthistory(i,size_history*jj) + 0.5*s1x - x(j,0);
-    ryj = d_firsthistory(i,size_history*jj+1) + 0.5*s1y - x(j,1);
+    rxj = d_firsthistory(i,size_history*jj+2) + 0.5*s1x - x(j,0);
+    ryj = d_firsthistory(i,size_history*jj+3) + 0.5*s1y - x(j,1);
     Bnj = rxj*bey - ryj*bex;
     Cnj = -Cn;
     Dnj = -Dn;
@@ -1008,13 +997,13 @@ void PairGranHopkinsKokkos<DeviceType>::compute_bonded_kokkos(int i, int j, int 
   hmin = MIN(min_thickness(i), min_thickness(j));
   if (HISTORYUPDATE){
     F_FLOAT c1, c2;
-    c1 = d_firsthistory(i,size_history*jj+8);
-    c2 = d_firsthistory(i,size_history*jj+9);
+    c1 = d_firsthistory(i,size_history*jj);
+    c2 = d_firsthistory(i,size_history*jj+1);
     update_chi(kn0, kt0, Dn, Cn, Dt, Ct, hmin, c1, c2);
-    d_firsthistory(i,size_history*jj+8) = c1;
-    d_firsthistory(i,size_history*jj+9) = c2;
+    d_firsthistory(i,size_history*jj) = c1;
+    d_firsthistory(i,size_history*jj+1) = c2;
     d_firsttouch(i,jj) = 1;
-    if (d_firsthistory(i,size_history*jj+8) >= d_firsthistory(i,size_history*jj+9)){ //Bond just broke
+    if (d_firsthistory(i,size_history*jj) >= d_firsthistory(i,size_history*jj+1)){ //Bond just broke
         F_FLOAT dx = x(i,0) - x(j,0);
         F_FLOAT dy = x(i,1) - x(j,1);
         F_FLOAT rij = sqrt(dx*dx + dy*dy);
@@ -1022,8 +1011,7 @@ void PairGranHopkinsKokkos<DeviceType>::compute_bonded_kokkos(int i, int j, int 
         if (delta_0 < 0) delta_0 = 0;
         for (int k = 0; k < size_history; ++k)
           d_firsthistory(i,size_history*jj+k) = 0;
-        d_firsthistory(i,size_history*jj+4) = hprime_0;
-        d_firsthistory(i,size_history*jj+5) = delta_0;
+        d_firsthistory(i,size_history*jj+4) = delta_0;
     }
   }
 }
