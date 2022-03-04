@@ -50,9 +50,12 @@ protected:
   double       shearYieldStress;
   double compressiveYieldStress;
   double  tensileFractureStress;
-  double timeIntegrationFlag;
+
+  int timeIntegrationFlag;
   double bulkCFL;
-  double UseTVTransport;
+  bool UseTVTransport;
+  bool UseGradO2;
+  double contactMargin;
 
   double ultimateTensileStrain;
   double elastic_wavespeed;
