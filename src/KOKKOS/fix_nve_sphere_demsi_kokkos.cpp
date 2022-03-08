@@ -163,12 +163,12 @@ void FixNVESphereDemsiKokkos<DeviceType>::initial_integrate_item(const int i) co
       double D13 = ocean_density*ocean_drag*w13*ice_Area;
       double a = D12*dtf/(ice_Density*ice_Volume);
       double b = D13*dtf/(ice_Density*ice_Volume);
-/*
+
       // fixed u2,u3 form:
       double rden = 1./(1. + a + b);
       double up1 = (u1 + a*u2 + b*u3)*rden;
       double vp1 = (v1 + a*v2 + b*v3)*rden;
-*/
+/*
         double c = D12*dtf/(atmos_density*ice_Volume);
         double d = D13*dtf/(ocean_density*ice_Volume);
         //A = {{1 + a + b,    -a,    -b},
@@ -181,7 +181,7 @@ void FixNVESphereDemsiKokkos<DeviceType>::initial_integrate_item(const int i) co
         double B13 = (b + b*c);
         double up1 = (B11*u1 + B12*u2 + B13*u3)*rden;
         double vp1 = (B11*v1 + B12*v2 + B13*v3)*rden;
-
+*/
       // add the coriolis acceleration
       double cdt = coriolis(i)*dtf*rden;
       double cden = 1./(1. + cdt*cdt);
@@ -314,12 +314,12 @@ void FixNVESphereDemsiKokkos<DeviceType>::final_integrate_item(const int i) cons
       double D13 = ocean_density*ocean_drag*w13*ice_Area;
       double a = D12*dtf/(ice_Density*ice_Volume);
       double b = D13*dtf/(ice_Density*ice_Volume);
-/*
+
       // fixed u2,u3 form:
       double rden = 1./(1. + a + b);
       up1 = (u1 + a*u2 + b*u3)*rden;
       vp1 = (v1 + a*v2 + b*v3)*rden;
-*/
+/*
         double c = D12*dtf/(atmos_density*ice_Volume);
         double d = D13*dtf/(ocean_density*ice_Volume);
         //A = {{1 + a + b,    -a,    -b},
@@ -332,7 +332,7 @@ void FixNVESphereDemsiKokkos<DeviceType>::final_integrate_item(const int i) cons
         double B13 = (b + b*c);
         up1 = (B11*u1 + B12*u2 + B13*u3)*rden;
         vp1 = (B11*v1 + B12*v2 + B13*v3)*rden;
-
+*/
       // add the coriolis acceleration
       double cdt = coriolis(i)*dtf*rden;
       double cden = 1./(1. + cdt*cdt);

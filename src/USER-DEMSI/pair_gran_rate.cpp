@@ -142,10 +142,6 @@ void PairGranRate::compute_TV_Transport(int evflag)
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
 
-  int bondFlagIn; // incoming bondFlag
-  int Fplus;      // outgoing bondFlag
-
-  double delx, dely, rsq, radsum;
   double radi, radj, r, rinv, nx, ny, tx, ty;
   double vrx, vry, vnnr, wrz, vttr;
   double hAVGi, hAVGj, hDeltal;
@@ -201,14 +197,14 @@ void PairGranRate::compute_TV_Transport(int evflag)
       dvz = mvz[i]/mIt[i] - vn[i][2];
       radi = radius[i];
       dvsqr = dvx*dvx + dvy*dvy + (radi*dvz)*(radi*dvz); // |dv|^2
-      dMach = 0.5*dtv*sqrt(dvsqr)/(2.*radi); // increases with bulkCFL
+      dMach = dtv*sqrt(dvsqr)/(2.*radi); // increases with bulkCFL
     } else {
       dvx = dvy = dvz = dMach = 0.;
     }
     torque[i][0] = sqrt(dvsqr)/elastic_wavespeed; // dMach diagnostic
 
     if (UseTVTransport) {
-      dMach = fmin(0.5, 0.5*dMach);
+      dMach = fmin(0.5, dMach);
     } else {
       dMach = 0.;
     }
@@ -228,7 +224,7 @@ void PairGranRate::compute_rate_explicit(int evflag)
   int itype,jtype;
 
   int *ilist,*jlist,*numneigh,**firstneigh;
-  int **firsttouch;
+  int *touch,**firsttouch;
   double *history,*allhistory,**firsthistory;
   
   inum = list->inum;
@@ -253,8 +249,8 @@ void PairGranRate::compute_rate_explicit(int evflag)
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
 
-  int bondFlagIn; // incoming bondFlag
-  int Fplus;      // outgoing bondFlag
+  int FlagIn; // incoming contact Flag
+  int Fplus;  // outgoing contact Flag
 
   double delx, dely, rsq, radsum;
   double radi, radj, r, rinv, nx, ny, tx, ty;
@@ -270,7 +266,7 @@ void PairGranRate::compute_rate_explicit(int evflag)
   double dtv = update->dt;
   double dtf = 0.5 * update->dt; // * force->ftm2v;
 
-  /* Load the explicit force/torque */
+  // Load the explicit force/torque
 
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
@@ -282,10 +278,10 @@ void PairGranRate::compute_rate_explicit(int evflag)
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
     itype = atom->type[i];
-
     jlist = firstneigh[i];
     jnum = numneigh[i];
     allhistory = firsthistory[i];
+    touch = firsttouch[i];
     radi = radius[i];
 
     // loop over neighbors of each element
@@ -294,22 +290,24 @@ void PairGranRate::compute_rate_explicit(int evflag)
       jtype = atom->type[j];
       j &= NEIGHMASK;
       radj = radius[j];
-
       history = &allhistory[size_history*jj];
-      bondFlagIn = int(history[2]);
-      Fplus = bondFlagIn;
 
       /*'history' now points to the ii-jj array that stores
         all the history associated with pair ii-jj
         For all pairs:
-        *history[0]: contactPressure
-        *history[1]: contactShear
-        *history[2]: contactFlag [0=no contact, 1=in contact]
+        *history[1]: contactPressure
+        *history[2]: contactShear
+        *history[0]: contactFlag [0=no contact, 1=in contact]
       */
 
       delx = x[j][0] - x[i][0];
       dely = x[j][1] - x[i][1];
       rsq = delx*delx + dely*dely;
+      radsum = contactMargin*(radi + radj);
+
+      FlagIn = int(history[0]);
+      Fplus = FlagIn;
+
       r = sqrt(rsq);
       rinv = 1./r;
       nx = delx*rinv;
@@ -322,7 +320,7 @@ void PairGranRate::compute_rate_explicit(int evflag)
       vry = vn[j][1] - vn[i][1];
 
       // relative rotational velocity
-      double radij = 2*(radi * radj)/(radi + radj); // Harmonic mean radius
+      double radij = 2.*(radi * radj)/(radi + radj); // Harmonic mean radius
       wrz = radij*(vn[i][2] + vn[j][2]);
 
       // magnitude of the normal relative velocity
@@ -338,28 +336,26 @@ void PairGranRate::compute_rate_explicit(int evflag)
         Pplus =  bulkModulus*dLogV; // half step stress increment
         Splus = shearModulus*dLogS;
       } else {
-        Pplus = 0.;
-        Splus = 0.;
-//      Pplus =  bulkModulus*dLogV/5.; // (1/5) half step stress increment
-//      Splus = shearModulus*dLogS/5.;
+        Pplus = Splus = 0.;
+//      Pplus =   bulkModulus*dLogV/5.; // (1/5 of) full step stress increment
+//      Splus =  shearModulus*dLogS/5.;
       }
 
+      // plastic shear in elastic range: compressiveYieldStress<Pplus<tensileFractureStress
+      double pres = fmax(fmin(Pplus,tensileFractureStress),compressiveYieldStress);
+      double pfac = (                  pres - compressiveYieldStress)
+                  / (tensileFractureStress  - compressiveYieldStress); // 0<=pfac<=1
+      double sfac = fmax(1.e-99, (1. - pfac));
+      Sxplus = Splus*tx; Syplus = Splus*ty;
+      SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/(shearYieldStress*sfac);
+      if (SYield > 1.0) {Splus /= SYield;}
+      
       // test for tensile fracture, compressive flowstress, shear flowstress
       if (Pplus >= tensileFractureStress) { // brittle elastic fracture
-//      Pplus = 0.; Fplus = 0;
-        Pplus = tensileFractureStress;
-        if (r/radsum > 5.) {Pplus = 0.; Fplus = 0;}
+        Pplus = 0.; Fplus = 0.;
       } else if (Pplus <= compressiveYieldStress) { // perfectly plastic compressive flowstress
         Pplus = compressiveYieldStress;
       }
-      // plastic shear in elastic range: compressiveYieldStress<Pplus<tensileFractureStress
-      Sxplus = Splus*tx;
-      Syplus = Splus*ty;
-      double pfac = (                Pplus - compressiveYieldStress)
-                  / (tensileFractureStress - compressiveYieldStress); // 0<pfac<1
-      double sfac = fmax(1.e-99, (1. - pfac));
-      SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/(shearYieldStress*sfac);
-      if (SYield > 1.0) {Splus /= SYield;}
 
       // load the forces and torques
       hAVGi = mean_thickness[i];
@@ -396,9 +392,9 @@ void PairGranRate::compute_rate_explicit(int evflag)
     double dvy = dtm*f[i][1];
     double dvz = dtm*torque[i][2]/(0.5*radi*radi);
 
-    vn[i][0] =     v[i][0] + dvx;
-    vn[i][1] =     v[i][1] + dvy;
-    vn[i][2] = omega[i][2] + dvz;
+    vn[i][0] += dvx;
+    vn[i][1] += dvy;
+    vn[i][2] += dvz;
   } // end for (ii = 0; ii < inum; ii++)
 
 } // end PairGranRate::compute_rate_explicit
@@ -436,10 +432,10 @@ void PairGranRate::compute_rate_implicit(int evflag)
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
 
-  int bondFlagIn; // incoming bondFlag
-  int Fplus;      // outgoing bondFlag
+  int FlagIn; // incoming Flag
+  int Fplus;  // outgoing Flag
 
-  double delx, dely, rsq, radsum;
+  double delx, dely, rsq;
   double radi, radj, r, rinv, nx, ny, tx, ty;
   double vrx, vry, vnnr, wrz, vttr;
   double hAVGi, hAVGj, hDeltal;
@@ -452,6 +448,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
 
   double dtv = update->dt;
   double dtf = 0.5*dtv;
+//double dtz = dtf/fmax(1.,bulkCFL);
 
   /*
     Allocate memory for the block data according to this blocking scheme:
@@ -467,15 +464,11 @@ void PairGranRate::compute_rate_implicit(int evflag)
     rotation is radius[j]*vz.
   */
 
-  const int nmax = 7; // 1 + max number of neighbors
-  int ns[inum];
-  int ls[inum][nmax];
-  double vs[inum][nmax][3];
-
   /*
     Load the implicit accelerations by solving the system x=Inverse[A].b for
     the new velocity x such that x-vn = Delta[v].
   */
+  const int nmax = 18; // 1 + max number of neighbors
   const int ndim = 2; // 2 for 2d, 3 for 3d
   // work space: uses indices starting with 1
   const int wdim = (1 + nmax)*ndim;
@@ -483,6 +476,10 @@ void PairGranRate::compute_rate_implicit(int evflag)
   double P[wdim][wdim];  // the full matrix of pivots
   double b[wdim];        // the right-side vector, and solution vector
 
+  int ns[inum];
+  int ls[inum][nmax];
+  double vs[inum][nmax][ndim];
+  
   //load the lists ns, ls, vs
   int nsp; // can be up to nmax-1
   for (ii = 0; ii < inum; ii++) {
@@ -495,13 +492,13 @@ void PairGranRate::compute_rate_implicit(int evflag)
     ls[ii][0] = i; // element number at ii
     vs[ii][0][0] = vn[i][0];
     vs[ii][0][1] = vn[i][1];
-    vs[ii][0][2] = vn[i][2];
+//  vs[ii][0][2] = vn[i][2];
     for (jj = 0; jj < jnum; jj++) {
       j = jlist[jj];
       j &= NEIGHMASK;
       if (j >= nlocal) continue;  // debug: exclude off-PE neighbors
-      history = &allhistory[size_history*jj];
-      Fplus = int(history[2]);
+//    history = &allhistory[size_history*jj];
+//    Fplus = int(history[0]);
 //    if (Fplus == 1) { // the neighbor is "in contact"
         nsp = ns[ii] + 1;
         if(nsp > nmax-1) continue; // continue or break; ?
@@ -509,7 +506,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
         ls[ii][nsp] = j;
         vs[ii][nsp][0] = vn[j][0];
         vs[ii][nsp][1] = vn[j][1];
-        vs[ii][nsp][2] = vn[j][2];
+//      vs[ii][nsp][2] = vn[j][2];
 //    } // end if Fplus == 1
     } // end for (jj = 0; jj < jnum; jj++)
   } // end for (ii = 0; ii < inum; ii++)
@@ -566,6 +563,7 @@ void PairGranRate::compute_rate_implicit(int evflag)
                            /(radi*hAVGi + radj*hAVGj); // contact Area
 
         double   dtfac = (dtf*dtf)*hDeltal*rinv; // half step with half step stress increment
+//      double   dtfac = (dtz*dtz)*hDeltal*rinv; // half step scaled by 1/CFL
         double  dtbulk =  bulkModulus*dtfac;
         double dtshear = shearModulus*dtfac;
         double  kappaK =  (dtbulk/rmass[i]);
@@ -664,7 +662,10 @@ void PairGranRate::compute_rate_implicit(int evflag)
     } // end for (int kf = 0; kf <= ns[ii]; kf++) {
   } // end for (ii = 0; ii < inum; ii++)
 
-  double alpha = 0.5; // 0. <= alpha <= 1.
+  // alpha[CFL] smoothing is necessary, which we presume is because
+  // the drag force is an explicit source to the acceleration...
+  double maxCFL = fmax(1., bulkCFL);
+  double alpha = 1./pow(maxCFL, 2.5);
   for (ii = 0; ii < inum; ii++) {
     for (int kf = 0; kf <= ns[ii]; kf++) {
       j = ls[ii][kf];
@@ -673,9 +674,10 @@ void PairGranRate::compute_rate_implicit(int evflag)
         radj = radius[j];
         rIj = 0.5*rmj*radj*radj;
         I0t[j] += rIj;
-        mvx[j] += rmj*(vs[ii][kf][0] - vn[j][0]);
-        mvy[j] += rmj*(vs[ii][kf][1] - vn[j][1]);
-        mvz[j] += rIj*(vs[ii][kf][2] - vn[j][2]*alpha);
+        mvx[j] += rmj*(vs[ii][kf][0] - vn[j][0]*alpha);
+        mvy[j] += rmj*(vs[ii][kf][1] - vn[j][1]*alpha);
+//      mvz[j] += rIj*(vs[ii][kf][2] - vn[j][2]*alpha);
+        mvz[j] += rIj*(vn[j][2]);
     } // end for (int kf = 0; kf <= ns[ii]; kf++) {
   } // end for (ii = 0; ii < inum; ii++)
 
@@ -688,14 +690,14 @@ void PairGranRate::compute_rate_implicit(int evflag)
     } // end for (int kf = 0; kf <= ns[ii]; kf++) {
   } // end for (ii = 0; ii < inum; ii++)
 
-  // full step with the full step stress increment, averaged
+  // half step with the half step stress increment, averaged
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
     itype = atom->type[i];
     if (itype != 1) continue;
-    vn[i][0] = mvx[i] + vn[i][0];
-    vn[i][1] = mvy[i] + vn[i][1];
-    vn[i][2] = mvz[i] + vn[i][2]*alpha;
+    vn[i][0] = mvx[i] + vn[i][0]*alpha;
+    vn[i][1] = mvy[i] + vn[i][1]*alpha;
+    vn[i][2] = mvz[i];
   } // end for (ii = 0; ii < inum; ii++)
 
 } // end PairGranRate::compute_rate_implicit
@@ -732,8 +734,8 @@ void PairGranRate::load_new_forces(int evflag)
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
 
-  int bondFlagIn; // incoming bondFlag
-  int Fplus;      // outgoing bondFlag
+  int FlagIn; // incoming contact Flag
+  int Fplus;  // outgoing contact Flag
 
   double delx, dely, rsq, radsum;
   double radi, radj, r, rinv, nx, ny, tx, ty;
@@ -778,20 +780,20 @@ void PairGranRate::load_new_forces(int evflag)
       /*'history' now points to the ii-jj array that stores
         all the history associated with pair ii-jj
         For all pairs:
-        *history[0]: contactPressure
-        *history[1]: contactShear
-        *history[2]: contactFlag [0=no contact, 1=in contact]
+        *history[1]: contactPressure
+        *history[2]: contactShear
+        *history[0]: contactFlag [0=no contact, 1=in contact]
       */
 
       delx = x[j][0] - x[i][0];
       dely = x[j][1] - x[i][1];
       rsq = delx*delx + dely*dely;
-      radsum = OverLap*(radi + radj); // <100%
+      radsum = contactMargin*(radi + radj);
 
-      bondFlagIn = int(history[2]);
-      Fplus = bondFlagIn;
+      FlagIn = int(history[0]);
+      Fplus = FlagIn;
 
-      if(!bondFlagIn){
+      if(!FlagIn){
         if (rsq >= radsum*radsum){ // no contact
           touch[jj] = 0;
           Fplus = 0;
@@ -802,8 +804,8 @@ void PairGranRate::load_new_forces(int evflag)
           touch[jj] = 1;
           Fplus = 1;
         } // end if(rsq >= radsum*radsum
-        history[0] = history[1] = 0.;
-      } // end if(!bondFlagIn)
+        history[1] = history[2] = 0.;
+      } // end if(!FlagIn)
 
       r = sqrt(rsq);
       rinv = 1./r;
@@ -817,7 +819,7 @@ void PairGranRate::load_new_forces(int evflag)
       vry = vn[j][1] - vn[i][1];
 
       // relative rotational velocity
-      double radij = 2*(radi * radj)/(radi + radj); // Harmonic mean radius
+      double radij = 2.*(radi * radj)/(radi + radj); // Harmonic mean radius
       wrz = radij*(vn[i][2] + vn[j][2]);
 
       // magnitude of the normal relative velocity
@@ -830,37 +832,35 @@ void PairGranRate::load_new_forces(int evflag)
       double dLogS = dtv*vttr*rinv;
 
       if (Fplus){
-        Pplus = history[0] +  bulkModulus*dLogV; // full step stress
-        Splus = history[1] + shearModulus*dLogS;
+        Pplus = history[1] +  bulkModulus*dLogV; // full step stress
+        Splus = history[2] + shearModulus*dLogS;
       } else {
-        Pplus = 0.;
-        Splus = 0.;
-//      Pplus =   bulkModulus*dLogV/5.; // 1/5 full step stress increment
+        Pplus = Splus = 0.;
+//      Pplus =   bulkModulus*dLogV/5.; // (1/5 of) full step stress increment
 //      Splus =  shearModulus*dLogS/5.;
       }
 
+      // plastic shear in elastic range: compressiveYieldStress<Pplus<tensileFractureStress
+      double pres = fmax(fmin(Pplus,tensileFractureStress),compressiveYieldStress);
+      double pfac = (                  pres - compressiveYieldStress)
+                  / (tensileFractureStress  - compressiveYieldStress); // 0<=pfac<=1
+      double sfac = fmax(1.e-99, (1. - pfac));
+      Sxplus = Splus*tx; Syplus = Splus*ty;
+      SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/(shearYieldStress*sfac);
+      if (SYield > 1.0) {Splus /= SYield;}
+      
       // test for tensile fracture, compressive flowstress, shear flowstress
       if (Pplus >= tensileFractureStress) { // brittle elastic fracture
-//      Pplus = 0.; Fplus = 0;
-        Pplus = tensileFractureStress;
-        if (r/radsum > 5.) {Pplus = 0.; Fplus = 0;}
+        Pplus = 0.; Fplus = 0.;
       } else if (Pplus <= compressiveYieldStress) { // perfectly plastic compressive flowstress
         Pplus = compressiveYieldStress;
       }
-      // plastic shear in elastic range: compressiveYieldStress<Pplus<tensileFractureStress
-      Sxplus = Splus*tx;
-      Syplus = Splus*ty;
-      double pfac = (                Pplus - compressiveYieldStress)
-                  / (tensileFractureStress - compressiveYieldStress); // 0<pfac<1
-      double sfac = fmax(1.e-99, (1. - pfac));
-      SYield = sqrt(Sxplus*Sxplus + Syplus*Syplus)/(shearYieldStress*sfac);
-      if (SYield > 1.0) {Splus /= SYield;}
 
       // update history
       if(historyupdate){
-        history[0] = Pplus;
-        history[1] = Splus;
-        history[2] = double(Fplus);
+        history[1] = Pplus;
+        history[2] = Splus;
+        history[0] = double(Fplus);
       }
 
       // load the forces and torques
@@ -896,7 +896,7 @@ void PairGranRate::load_new_forces(int evflag)
 
 void PairGranRate::settings(int narg, char **arg)
 {
-  if (narg != 8) error->all(FLERR,"Illegal pair_style command");
+  if (narg != 10) error->all(FLERR,"Illegal pair_style command");
              bulkModulus = utils::numeric(FLERR, arg[0],false,lmp);
             shearModulus = utils::numeric(FLERR, arg[1],false,lmp);
         shearYieldStress = utils::numeric(FLERR, arg[2],false,lmp);
@@ -905,6 +905,8 @@ void PairGranRate::settings(int narg, char **arg)
      timeIntegrationFlag = utils::numeric(FLERR, arg[5],false,lmp);
                  bulkCFL = utils::numeric(FLERR, arg[6],false,lmp);
           UseTVTransport = utils::numeric(FLERR, arg[7],false,lmp);
+               UseGradO2 = utils::numeric(FLERR, arg[8],false,lmp);
+           contactMargin = utils::numeric(FLERR, arg[9],false,lmp);
 }
 
 /* ---------------------------------------------------------------------- */
